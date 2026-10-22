@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>こえ検索 投影</title>
+<style>
+  :root { --paper: #f6f3ee; --ink: #2b2620; --muted: #8a8375; --scale: 1; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); color: var(--ink);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+  #stage { position: absolute; inset: 0; display: flex; flex-direction: column; }
+  #grid { flex: 1; min-height: 0; display: grid; gap: 1.6vh; padding: 2.4vh 2.4vw; }
+  figure { margin: 0; min-height: 0; display: flex; flex-direction: column; background: #fff; border-radius: 1vh; overflow: hidden; }
+  figure img { flex: 1; min-height: 0; width: 100%; object-fit: contain; background: #fff; }
+  figcaption { font-size: 1.8vh; color: var(--muted); padding: 0.6vh 1vw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #word { text-align: center; font-size: 6vh; font-weight: 700; padding: 0.4vh 0 1.6vh; }
+  #word:empty { display: none; }
+  #standby, #msg { margin: auto; text-align: center; }
+  #standby h1 { font-size: 9vh; margin: 0 0 3vh; }
+  #standby p, #msg { font-size: 2.6vh; color: var(--muted); line-height: 1.8; }
+  #fsBtn { margin-top: 3vh; font-size: 2.6vh; padding: 1.4vh 3vw; border-radius: 999px; border: none; background: #4a7a68; color: #fff; cursor: pointer; }
+  iframe { flex: 1; border: 0; width: 100%; background: #fff; }
+  #credit { position: absolute; right: 1vw; bottom: 0.4vh; font-size: 1.3vh; color: var(--muted); }
+
+  /* 字幕（ルビ付き）。操作画面の設定で上・下を選べる */
+  #bar { position: absolute; left: 0; right: 0; box-sizing: border-box; padding: 1.2vh 3vw; background: rgba(31, 28, 24, 0.92);
+    color: #fff; font-weight: 600; font-size: calc(5.2vh * var(--scale)); display: none; z-index: 10; }
+  #bar.on { display: block; }
+  #bar.top { top: 0; } #bar.bottom { bottom: 0; }
+  .line { white-space: nowrap; overflow: hidden; line-height: 1.75; min-height: 1.75em; }
+  .line.old { color: #b8b0a3; }
+  .interim { color: #8f877b; }
+  ruby rt { font-size: 0.45em; font-weight: 500; color: #f3d9a4; }
+  .line.old ruby rt { color: #a89a7c; }
+  #measure { position: absolute; visibility: hidden; left: 0; top: 0; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="standby">
+    <h1>こえ検索</h1>
+    <p>このウィンドウに、話に出てきた言葉の写真（Wikipedia）が表示されます。<br>
+    話した言葉は、ルビ付きの字幕で表示されます。</p>
+    <button id="fsBtn">クリックで全画面にする（F キー）</button>
+  </div>
+</div>
+<div id="bar" class="bottom"><div class="line"></div><div class="line"></div><div class="line" id="measure"></div></div>
+<div id="credit"></div>
+<script>
+// 操作画面（index.html）から BroadcastChannel「koe-web」で指示が届く。
+//   show  : { query, label, url? } → Wikipedia の画像を並べる（url があればそのページ）
+//   final / interim : 字幕の文字 [[文字, ルビ], ...]
+//   style : { scale, pos }   clear : 字幕を消す
+const ch = new BroadcastChannel("koe-web");
+const stage = document.getElementById("stage");
+const $ = (id) => document.getElementById(id);
+
+// ---------- 全画面 ----------
+// 投影ウィンドウはページが切り替わらないので、一度全画面にすれば講座中ずっとそのまま
+function toggleFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {});
+}
+$("fsBtn").onclick = toggleFullscreen;
+document.addEventListener("keydown", (e) => { if (e.key === "f" || e.key === "F") toggleFullscreen(); });
+
+// ---------- Wikipedia の画像 ----------
+const WIKI = "https://ja.wikipedia.org/w/api.php?format=json&origin=*&";
+async function wikiJson(params) {
+  const r = await fetch(WIKI + new URLSearchParams(params));
+  return r.json();
+}
+// 検索に合う記事の「代表の写真」を集める。少なければ、いちばん合う記事の中の写真も足す
+async function wikiImages(q, max = 6) {
+  const d = await wikiJson({ action: "query", generator: "search", gsrsearch: q, gsrlimit: 10,
+    prop: "pageimages", piprop: "thumbnail", pithumbsize: 1200, pilimit: 10 });
+  const pages = Object.values(d.query?.pages || {}).sort((a, b) => a.index - b.index);
+  const out = [];
+  for (const p of pages) if (p.thumbnail && out.length < max) out.push({ src: p.thumbnail.source, cap: p.title });
+  if (out.length < 4 && pages[0]) {
+    const m = await wikiJson({ action: "query", titles: pages[0].title, generator: "images", gimlimit: 30,
+      prop: "imageinfo", iiprop: "url|size", iiurlwidth: 1200 });
+    const files = Object.values(m.query?.pages || {})
+      .map((f) => f.imageinfo?.[0])
+      .filter((i) => i && /\.(jpe?g|png)$/i.test(i.url) && i.width >= 300 && i.height >= 200);
+    for (const i of files) {
+      if (out.length >= max) break;
+      if (!out.some((o) => o.src === i.thumburl)) out.push({ src: i.thumburl, cap: pages[0].title });
+    }
+  }
+  return out;
+}
+
+let showSeq = 0;
+async function show(m) {
+  const seq = ++showSeq;
+  $("credit").textContent = "";
+  if (m.url) {
+    stage.innerHTML = `<iframe src="${encodeURI(m.url)}"></iframe>`;
+    return;
+  }
+  let imgs = [];
+  try { imgs = await wikiImages(m.query); } catch (e) {}
+  if (seq !== showSeq) return;   // 待っている間に次の言葉が来た
+  if (!imgs.length) {
+    stage.innerHTML = `<div id="msg"></div><div id="word"></div>`;
+    $("msg").textContent = `「${m.label}」の写真は Wikipedia に見つかりませんでした`;
+    return;
+  }
+  const n = imgs.length, cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
+  stage.innerHTML = `<div id="grid"></div><div id="word"></div>`;
+  const grid = $("grid");
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, 1fr)`;
+  for (const im of imgs) {
+    const f = document.createElement("figure");
+    const img = document.createElement("img");
+    img.src = im.src; img.alt = im.cap;
+    const c = document.createElement("figcaption");
+    c.textContent = im.cap;
+    f.append(img, c);
+    grid.appendChild(f);
+  }
+  $("word").textContent = m.label;
+  $("credit").textContent = "写真：Wikipedia / Wikimedia Commons";
+}
+
+// ---------- 字幕（ルビ付き） ----------
+const LINE_SECONDS = 10;   // 1行を使う時間。これを過ぎて話が続いたら次の行へ
+let lines = [], interim = [];
+const bar = $("bar"), measureEl = $("measure");
+const [l0, l1] = bar.querySelectorAll(".line");
+
+function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function html(tokens, cls) {
+  const inner = tokens.map(([s, r]) => (r ? `<ruby>${esc(s)}<rt>${esc(r)}</rt></ruby>` : esc(s))).join("");
+  return cls ? `<span class="${cls}">${inner}</span>` : inner;
+}
+function fits(tokens) {
+  const was = bar.classList.contains("on");
+  bar.classList.add("on");
+  measureEl.innerHTML = html(tokens);
+  const cs = getComputedStyle(bar);
+  const ok = measureEl.scrollWidth <= bar.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+  if (!was) bar.classList.remove("on");
+  return ok;
+}
+function place(target, tokens, now) {
+  for (const t of tokens) {
+    let cur = target[target.length - 1];
+    const tooOld = !cur || now - cur.at > LINE_SECONDS * 1000;
+    const full = cur && cur.tokens.length > 0 && !fits([...cur.tokens, t]);
+    if (tooOld || full) {
+      if (cur && cur.tokens.length === 0) cur.at = now;
+      else { cur = { at: now, tokens: [] }; target.push(cur); }
+    }
+    if (cur.tokens.length === 0 && /^\s+$/.test(t[0])) continue;
+    if (cur.tokens.length === 0 && /^[、。，．,.!?！？」』）]+$/.test(t[0])) {
+      const prev = target[target.length - 2];
+      if (prev) prev.tokens.push(t);
+      continue;
+    }
+    cur.tokens.push(t);
+  }
+}
+function render() {
+  const now = Date.now();
+  const view = lines.map((l) => ({ at: l.at, tokens: l.tokens.map((t) => [...t, false]) }));
+  if (interim.length) place(view, [["　", "", true], ...interim.map((t) => [...t, true])], now);
+  const last2 = view.slice(-2);
+  [l0, l1].forEach((el, i) => {
+    const l = last2[i];
+    if (!l) { el.innerHTML = ""; el.classList.remove("old"); return; }
+    let out = "", buf = [], mode = null;
+    const flush = () => { if (buf.length) out += html(buf, mode ? "interim" : ""); buf = []; };
+    for (const t of l.tokens) { if (t[2] !== mode) { flush(); mode = t[2]; } buf.push(t); }
+    flush();
+    el.innerHTML = out;
+    el.classList.toggle("old", last2.length === 2 && i === 0);
+  });
+  bar.classList.toggle("on", view.length > 0);
+  // 写真が字幕に隠れないよう、字幕の分だけ空けて並べる
+  const h = bar.classList.contains("on") ? bar.offsetHeight : 0;
+  stage.style.top = bar.classList.contains("top") ? h + "px" : "0";
+  stage.style.bottom = bar.classList.contains("top") ? "0" : h + "px";
+}
+
+ch.onmessage = (e) => {
+  const m = e.data || {};
+  if (m.type === "show") return show(m);
+  if (m.type === "final") { interim = []; place(lines, [["　", ""], ...m.tokens], Date.now()); if (lines.length > 6) lines = lines.slice(-6); }
+  else if (m.type === "interim") interim = m.tokens || [];
+  else if (m.type === "clear") { lines = []; interim = []; }
+  else if (m.type === "style") {
+    document.documentElement.style.setProperty("--scale", m.scale || 1);
+    bar.classList.toggle("top", m.pos === "top");
+    bar.classList.toggle("bottom", m.pos !== "top");
+  }
+  render();
+};
+ch.postMessage({ type: "hello" });   // 開いたら、操作画面に字幕の大きさ・位置を聞く
+window.addEventListener("resize", render);
+</script>
+</body>
+</html>

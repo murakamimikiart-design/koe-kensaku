@@ -1,0 +1,972 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>こえ検索（ブラウザ版）</title>
+<style>
+  :root {
+    --paper: #f6f3ee;
+    --ink: #2b2620;
+    --thread: #b3543a;
+    --thread2: #4a7a68;
+    --line: #d9d2c4;
+    --muted: #8a8375;
+    --hit: #f3d9a4;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    padding: 12px 18px; border-bottom: 1px solid var(--line); background: #fff;
+  }
+  header h1 { font-size: 18px; margin: 0 12px 0 0; font-weight: 600; }
+  .pill {
+    font-size: 13px; padding: 6px 12px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--paper); color: var(--muted);
+    cursor: pointer; user-select: none; white-space: nowrap;
+  }
+  .pill kbd { font-family: inherit; font-size: 11px; opacity: .7; margin-left: 4px; }
+  .pill.on { background: var(--thread2); border-color: var(--thread2); color: #fff; }
+  .pill.rec.on { background: var(--thread); border-color: var(--thread); }
+  .pill.warn { background: #fff3e0; border-color: #e0a050; color: #8a4b00; }
+  .pill.rec.on::before { content: "● "; animation: blink 1.2s infinite; }
+  @keyframes blink { 50% { opacity: .3; } }
+  .grow { flex: 1; }
+  #manual {
+    font-size: 15px; padding: 8px 14px; border: 1.5px solid var(--line);
+    border-radius: 999px; width: 240px; outline: none; background: #fff;
+  }
+  #manual:focus { border-color: var(--thread); }
+
+  #listenBanner { background: #b00020; color: #fff; font-size: 18px; font-weight: 600; text-align: center; padding: 10px; }
+  main { flex: 1; display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+  #transcript {
+    padding: 20px 26px; overflow-y: auto; font-size: 26px; line-height: 1.7;
+  }
+  #transcript .line { margin: 0 0 6px; }
+  #transcript .interim { color: var(--muted); }
+  #transcript mark { background: var(--hit); border-radius: 4px; padding: 0 2px; }
+  #transcript mark.name { background: #cfe3d9; }
+  #transcript .hint { font-size: 16px; color: var(--muted); line-height: 1.9; }
+  aside { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: #fbf9f5; }
+  .now { padding: 16px 18px; border-bottom: 1px solid var(--line); }
+  .label { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  #nowWord { font-size: 26px; font-weight: 700; min-height: 36px; word-break: break-all; }
+  .holdTrack { height: 6px; background: var(--line); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+  #holdBar { height: 100%; width: 0; background: var(--thread2); transition: width .25s linear; }
+  #holdBar.held { background: var(--thread); width: 100% !important; }
+  #queueInfo { font-size: 13px; color: var(--muted); margin-top: 8px; min-height: 18px; line-height: 1.7; }
+  #queueInfo b { color: var(--ink); }
+  #queueInfo .q { display: inline-block; background: var(--hit); color: var(--ink); border-radius: 999px; padding: 0 8px; margin: 2px 2px 0 0; }
+  #history { list-style: none; margin: 0; padding: 8px 10px; overflow-y: auto; flex: 1; }
+  #history li {
+    display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 10px;
+    cursor: pointer; font-size: 15px;
+  }
+  #history li:hover { background: #fff; }
+  #history .num { font-size: 11px; color: var(--muted); width: 14px; text-align: right; }
+  #history .w { flex: 1; font-weight: 600; word-break: break-all; }
+  #history .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--hit); }
+  #history .tag.name { background: #cfe3d9; }
+  #history .tag.manual { background: var(--line); }
+  #history li.skipped .w { color: var(--muted); font-weight: 400; }
+  #history li.candidate { border: 1.5px dashed #9cc2b0; }
+  #history li.candidate .w { color: var(--ink); }
+  #history .tag.photo { background: #e3d4ef; }
+  #history .tag.site { background: #d4e3f3; }
+  #history .tag.ai { background: #f6d6c9; }
+  #history li.candidate.ai-cand { border-color: #e0a58f; }
+  .ai-box { margin-top: 18px; padding-top: 14px; border-top: 1px dashed var(--line); }
+  .ai-box input[type=password] { width: 100%; font-size: 14px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; margin: 4px 0 8px; }
+  #aiKeyState { font-size: 12px; color: var(--muted); margin-left: 8px; }
+  .settings label.check { display: flex; gap: 8px; align-items: center; }
+  #history .t { font-size: 11px; color: var(--muted); }
+
+  #status { padding: 6px 18px; font-size: 13px; color: var(--muted); border-top: 1px solid var(--line); background: #fff; min-height: 30px; }
+  #status.error { color: #b00020; }
+
+  details { border-top: 1px solid var(--line); background: #fff; }
+  details summary { padding: 10px 18px; cursor: pointer; font-size: 14px; color: var(--muted); }
+  .settings { display: grid; grid-template-columns: 1fr 1fr 300px; gap: 18px; padding: 0 18px 18px; }
+  .settings textarea {
+    width: 100%; height: 200px; font-size: 14px; line-height: 1.6; padding: 10px;
+    border: 1px solid var(--line); border-radius: 10px; font-family: inherit; resize: vertical;
+  }
+  .settings h3 { font-size: 13px; margin: 0 0 6px; }
+  .settings .note { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 6px 0 0; }
+  .settings label { display: block; font-size: 13px; margin: 0 0 10px; }
+  .settings input[type=number], .settings input[type=text] {
+    width: 100%; font-size: 14px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; margin-top: 4px;
+  }
+  .keys { font-size: 13px; line-height: 2; }
+  .keys kbd { display: inline-block; min-width: 26px; text-align: center; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 0 6px; font-family: inherit; }
+  button.small { font-size: 13px; padding: 6px 14px; border-radius: 999px; border: none; background: var(--thread); color: #fff; cursor: pointer; }
+</style>
+</head>
+<body>
+<header>
+  <h1>こえ検索 <small style="font-size:12px;color:var(--muted);font-weight:400">ブラウザ版</small></h1>
+  <span class="pill rec" id="pListen" title="スペースキー">聞き取り<kbd>Space</kbd></span>
+  <span class="pill" id="pDisplay" title="Oキー">投影ウィンドウを開く<kbd>O</kbd></span>
+  <span class="pill on" id="pNames" title="Nキー：人物名らしい言葉を履歴に候補として並べる（自動では投影しません）">人物名の候補<kbd>N</kbd></span>
+  <span class="pill on" id="pWords" title="Wキー">単語リストで検索<kbd>W</kbd></span>
+  <span class="pill" id="pHold" title="Hキー">画像を固定<kbd>H</kbd></span>
+  <span class="pill" id="pAI" title="Kキー：話に出てきた地名・作品名などの固有名詞や、まとまった言葉を、自動で投影する">会話モード<kbd>K</kbd></span>
+  <span class="grow"></span>
+  <input id="manual" type="text" placeholder="手入力で検索（/ キー）" autocomplete="off">
+</header>
+
+<div id="listenBanner" hidden></div>
+<main>
+  <div id="transcript">
+    <p class="hint">
+      ① <b>O</b> キーで投影ウィンドウを開き、2画面目（プロジェクター）に移します。投影ウィンドウの中をクリックすると全画面になります。<br>
+      ② 聞き取りは自動で始まり、講座中ずっと続きます（止まっても自動でやり直します）。<br>
+      話した言葉の中に「単語リストの言葉」が出てくると、投影ウィンドウに Wikipedia の写真が出ます。<br>
+      字幕（ルビ付き）は、投影ウィンドウの上か下に重なります。
+    </p>
+  </div>
+  <aside>
+    <div class="now">
+      <div class="label">いま投影している言葉</div>
+      <div id="nowWord">—</div>
+      <div class="holdTrack"><div id="holdBar"></div></div>
+      <div id="queueInfo"></div>
+    </div>
+    <div class="label" style="padding: 10px 18px 0">これまでの検索（数字キーでもう一度表示）</div>
+    <ul id="history"></ul>
+  </aside>
+</main>
+
+<div id="status">準備中…</div>
+
+<details id="settingsBox">
+  <summary>設定（単語リスト・除外リスト・キー一覧）</summary>
+  <div class="settings">
+    <div>
+      <h3>単語リスト</h3>
+      <textarea id="words" spellcheck="false"></textarea>
+      <p class="note">1行に1語。言い方がいくつかあるときは「|」で区切ります。<br>
+      「=」の後ろに書くと、その言葉で検索します。例）<code>ゴッホ|ファン・ゴッホ = ゴッホ 自画像</code><br>
+      <b>ウェブサイトを出す</b>：「=」の後ろに https:// から始まるアドレスを書きます（サイトによっては表示を断られます）。<br>
+      単語リストに登録した人物名は、候補ではなく必ず投影されます。<br>
+      ひらがな・カタカナの違いや、漢字と読みの違いはある程度吸収します。</p>
+    </div>
+    <div>
+      <h3>候補・自動検索から外す言葉</h3>
+      <textarea id="exclude" spellcheck="false"></textarea>
+      <p class="note">人物名の候補や会話モードで出してほしくない言葉を1行に1つ書きます。<br>
+      履歴の言葉を右クリックすると、ここに追加できます。</p>
+      <div class="ai-box">
+        <h3>会話モード（簡易版・AI なし）</h3>
+        <p class="note" style="margin-top:0">話に出てきた地名・作品名・団体名などの固有名詞や、「作業療法」のような漢字のまとまった言葉を、辞書で見つけて自動で投影します。
+        AI もインターネット上のサービスも使いません（写真の検索だけ Wikipedia を使います）。<br>
+        事故・戦争・病気など、つらい写真が出そうな言葉は出しません。</p>
+      </div>
+      <div class="ai-box">
+        <h3>文字起こしの記録</h3>
+        <p class="note" style="margin-top:0">聞き取りを止める（スペースキー）と、記録をテキストファイルとしてダウンロードします。</p>
+        <button class="small" id="logDownload">最後の記録をもう一度ダウンロード</button>
+      </div>
+    </div>
+    <div>
+      <label>字幕の位置
+        <select id="subPos" style="width:100%;font-size:14px;padding:6px;margin-top:4px;border:1px solid var(--line);border-radius:8px">
+          <option value="top">上</option><option value="bottom">下</option>
+        </select>
+      </label>
+      <label>1つの画像を最低何秒見せるか
+        <input type="number" id="minHold" min="0" max="60" step="1">
+      </label>
+      <label>同じ言葉を再検索しない秒数
+        <input type="number" id="cooldown" min="0" max="3600" step="10">
+      </label>
+      <button class="small" id="save">保存して反映</button>
+      <div class="keys" style="margin-top:14px">
+        <kbd>Space</kbd> 聞き取り 停止／再開（ふだんは押さなくてOK）<br>
+        <kbd>O</kbd> 投影ウィンドウを開く<br>
+        <kbd>H</kbd> 画像を固定（自動で切り替えない）<br>
+        <kbd>N</kbd> 人物名の候補を並べる ON／OFF<br>
+        <kbd>W</kbd> 単語リストの自動検索 ON／OFF<br>
+        <kbd>1</kbd>〜<kbd>9</kbd> 履歴の言葉（候補も）を表示<br>
+        <kbd>/</kbd> 手入力で検索<br>
+        <kbd>F</kbd> この操作画面を全画面<br>
+        <kbd>+</kbd> <kbd>−</kbd> 字幕の文字を大きく／小さく<br>
+        <kbd>C</kbd> 字幕を消す<br>
+        <kbd>K</kbd> 会話モード（簡易版） ON／OFF<br>
+        投影ウィンドウ側：クリックか <kbd>F</kbd> で全画面
+      </div>
+    </div>
+  </div>
+</details>
+
+<script src="lib/kuromoji.js"></script>
+<script>
+// ---------- 設定 ----------
+const DEFAULTS = {
+  words: [
+    "# ここに検索したい言葉を1行に1つ書きます（# で始まる行はメモ）",
+    "ひまわり",
+    "富士山",
+    "モナリザ|モナ・リザ = モナ・リザ 絵画",
+  ].join("\n"),
+  subScale: 1,       // 字幕の文字の大きさ（1 = ふつう）
+  aiMode: false,     // 会話モード
+  subPos: "bottom",  // 字幕の位置（top / bottom）
+  exclude: "",
+  suffix: "",
+  minHold: 6,
+  cooldown: 120,
+  autoNames: true,
+  autoWords: true,
+};
+const STORE = "koe-kensaku-web-settings";
+let settings = { ...DEFAULTS };
+try { Object.assign(settings, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch (e) {}
+function saveSettings() { try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+let statusTimer;
+function status(msg, { error = false, ms = 6000 } = {}) {
+  statusEl.textContent = msg;
+  statusEl.classList.toggle("error", error);
+  clearTimeout(statusTimer);
+  if (ms) statusTimer = setTimeout(() => { statusEl.textContent = ""; }, ms);
+}
+
+// ---------- 文字のそろえ ----------
+const toHira = (s) => s.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+// 比べるときは、カタカナ→ひらがな、記号・空白は無視、英字は小文字
+const norm = (s) => toHira(s.normalize("NFKC").toLowerCase()).replace(/[\s・･、。，．,.!?！？「」『』（）()]/g, "");
+
+let tokenizer = null;
+function readingOf(text) {
+  if (!tokenizer) return norm(text);
+  return tokenizer.tokenize(text).map((t) => norm(t.reading && t.reading !== "*" ? t.reading : t.surface_form)).join("");
+}
+
+// ---------- 単語リスト ----------
+let entries = [];   // { triggers: [{surf, read}], query }
+let excludeSet = new Set();
+function buildLists() {
+  entries = [];
+  for (const raw of settings.words.split("\n")) {
+    const line = raw.trim();
+    if (!line || line.startsWith("#")) continue;
+    const [left, right] = line.split(/[=＝]/);
+    const names = left.split(/[|｜]/).map((s) => s.trim()).filter(Boolean);
+    if (!names.length) continue;
+    const target = (right || "").trim();
+    // 「=」の後ろが https:// で始まるときは、そのウェブサイトを出す
+    const url = /^https?:\/\//i.test(target) ? target : "";
+    const photos = !url && isPhotoTarget(target) ? target : "";
+    const query = photos || url ? names[0] : target || names[0];
+    entries.push({ query, label: names[0], names, photos, url, triggers: names.map((n) => ({ surf: norm(n), read: readingOf(n) })) });
+  }
+  excludeSet = new Set(settings.exclude.split("\n").map((s) => norm(s.trim())).filter(Boolean));
+}
+
+// 文から単語リストの言葉と人物名を探す
+function analyze(text, { withNames }) {
+  const hits = [];   // { query, label, kind, surface }
+  const tokens = tokenizer ? tokenizer.tokenize(text) : [];
+  const surfNorm = norm(text);
+
+  // 読みの並び（言葉の切れ目の位置も覚えておき、言葉の途中で一致したものは除く）
+  let read = "";
+  const bounds = new Set([0]);
+  for (const t of tokens) {
+    read += norm(t.reading && t.reading !== "*" ? t.reading : t.surface_form);
+    bounds.add(read.length);
+  }
+
+  if (settings.autoWords) {
+    for (const e of entries) {
+      let found = null;
+      for (const tr of e.triggers) {
+        if (tr.surf && surfNorm.includes(tr.surf)) { found = tr; break; }
+        if (tr.read.length >= 3) {
+          let i = read.indexOf(tr.read);
+          while (i >= 0) {
+            if (bounds.has(i) && bounds.has(i + tr.read.length)) { found = tr; break; }
+            i = read.indexOf(tr.read, i + 1);
+          }
+          if (found) break;
+        }
+      }
+      if (found) hits.push({ query: e.query, label: e.label, photos: e.photos, url: e.url, kind: e.url ? "site" : e.photos ? "photo" : "word", trig: found.surf, trigRead: found.read });
+    }
+  }
+
+  if (withNames && settings.autoNames) {
+    // 「人名」と判定された言葉が続いていたら、ひとまとまりの名前にする（夏目＋漱石）
+    let group = [];
+    const flush = () => {
+      if (!group.length) return;
+      const name = group.map((t) => t.surface_form).join("");
+      group = [];
+      if (name.length < 2) return;
+      if (excludeSet.has(norm(name))) return;
+      // 単語リストですでに拾えている名前（言い方の違いも含む）は、候補に重ねて出さない
+      const n = norm(name), r = readingOf(name);
+      const overlaps = (x, y) => x && y && (x.includes(y) || y.includes(x));
+      if (hits.some((h) => norm(h.label).includes(n) || norm(h.query).includes(n) || overlaps(h.trig, n) || overlaps(h.trigRead, r))) return;
+      hits.push({ query: name, label: name, kind: "name", candidate: true });
+    };
+    const isName = (t) => t && t.pos === "名詞" && t.pos_detail_1 === "固有名詞" && t.pos_detail_2 === "人名";
+    const isKata = (t) => t && /^[ァ-ヺー・]+$/.test(t.surface_form);
+    // 「氏」「様」「家」など、名前のあとに付く字はつなげない
+    const isKanji1 = (t) => t && t.pos === "名詞" && /^[一-鿿]$/.test(t.surface_form) && !"氏様君家達等殿派的側流式風宅邸夫妻組".includes(t.surface_form);
+    for (let i = 0; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (isName(t)) { group.push(t); continue; }
+      if (group.length) {
+        // 名前の最後の1文字が切れてしまうことがある（坂本龍＋馬、大谷翔＋平）
+        if (isKanji1(t) && !isName(tokens[i + 1])) { group.push(t); flush(); continue; }
+        // カタカナの名前は「・」でつなぐ（レオナルド・ダ・ヴィンチ）
+        if (/^[・＝=]$/.test(t.surface_form) && isKata(tokens[i + 1])) {
+          group.push(t);
+          while (isKata(tokens[i + 1])) group.push(tokens[++i]);
+          continue;
+        }
+      }
+      flush();
+    }
+    flush();
+  }
+  return hits;
+}
+
+// ---------- 字幕（ルビ付き） ----------
+// 字幕ページ（subtitle.html）へ BroadcastChannel で送る。形は [[文字, ルビ], ...]
+// 投影ウィンドウ（projection.html）とは BroadcastChannel「koe-web」でやりとりする
+const webChannel = new BroadcastChannel("koe-web");
+const isKanji = (c) => /[㐀-䶿一-鿿豈-﫿々〆ヶ]/.test(c);
+const isKana = (s) => /^[ぁ-ゖァ-ヺー・\s]+$/.test(s);
+const escRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const BUILTIN_READINGS = { "塑": "そ" };
+
+// 漢字の部分にだけ読みを割り当てる（送りがなは外す）。ルビカメラと同じやり方
+function rubyPieces(surface, reading) {
+  const chars = [...surface];
+  const segs = [];
+  chars.forEach((c) => {
+    const k = isKanji(c), last = segs[segs.length - 1];
+    if (last && last.kanji === k) last.text += c; else segs.push({ kanji: k, text: c });
+  });
+  if (!segs.some((s) => s.kanji)) return [[surface, ""]];
+  const r = toHira(reading || "");
+  if (!r) return segs.map((s) => [s.text, s.kanji ? (BUILTIN_READINGS[s.text] || "") : ""]);
+  const m = new RegExp("^" + segs.map((s) => (s.kanji ? "(.+?)" : escRe(toHira(s.text)))).join("") + "$").exec(r);
+  if (m) { let i = 0; return segs.map((s) => [s.text, s.kanji ? m[++i] : ""]); }
+  return [[surface, r]];
+}
+
+// 単語リストに「漢字の言い方」と「かなの言い方」があれば、その読みを優先する（安藤士 → あんどうたけし）
+function listReadings() {
+  const out = [];
+  for (const e of entries) {
+    const kana = (e.names || []).find((n) => isKana(n));
+    if (!kana) continue;
+    for (const n of e.names) if ([...n].some(isKanji)) out.push([n, toHira(kana.replace(/[\s・]/g, ""))]);
+  }
+  return out.sort((a, b) => b[0].length - a[0].length);
+}
+
+// 名前や職業のあとに付く字。文の切れ目しだいで辞書が「いえ」などと読むので決めておく
+const SUFFIX_READINGS = { "家": "か", "者": "しゃ", "士": "し", "性": "せい", "的": "てき", "化": "か", "師": "し" };
+
+function rubyTokens(text) {
+  if (!tokenizer) return [[text, ""]];
+  // 文全体を一度に区切る（途中で切ると読みが変わることがある）
+  let pos = 0;
+  const toks = tokenizer.tokenize(text).map((t) => {
+    const start = pos; pos += t.surface_form.length;
+    return { t, start, end: pos };
+  });
+  // 単語リストの漢字の言葉がある場所（ここは単語リストの読みを使う）
+  const fixed = [];
+  for (const [w, r] of listReadings()) {
+    let i = text.indexOf(w);
+    while (i >= 0) {
+      if (!fixed.some((f) => i < f.end && i + w.length > f.start)) fixed.push({ start: i, end: i + w.length, w, r });
+      i = text.indexOf(w, i + w.length);
+    }
+  }
+  const out = [];
+  let at = 0;
+  for (const { t, start, end } of toks) {
+    if (end <= at) continue;
+    const f = fixed.find((f) => f.start >= at && f.start < end);
+    if (f) {
+      if (f.start > Math.max(start, at)) out.push(...rubyPieces(text.slice(Math.max(start, at), f.start), ""));
+      out.push(...rubyPieces(f.w, f.r));
+      at = f.end;
+      if (end > at) { out.push(...rubyPieces(text.slice(at, end), "")); at = end; }
+      continue;
+    }
+    const surface = text.slice(Math.max(start, at), end);
+    let rd = t.reading && t.reading !== "*" ? t.reading : "";
+    if (t.pos_detail_1 === "接尾" && SUFFIX_READINGS[surface]) rd = SUFFIX_READINGS[surface];
+    out.push(...rubyPieces(surface, surface === t.surface_form ? rd : ""));
+    at = end;
+  }
+  return out;
+}
+
+function sendSubtitle(type, text) { webChannel.postMessage({ type, tokens: rubyTokens(text) }); }
+function sendSubStyle() { webChannel.postMessage({ type: "style", scale: settings.subScale, pos: settings.subPos }); }
+function clearSubtitle() { webChannel.postMessage({ type: "clear" }); }
+webChannel.onmessage = (e) => { if (e.data?.type === "hello") sendSubStyle(); };
+
+// ---------- 文字起こしの記録 ----------
+// 聞き取りを始めたら記録を始め、止めたら「記録」フォルダにテキストで保存する。
+// 途中で止まっても失われないよう、聞き取り中も1分ごとに上書き保存する。
+let logSession = null;   // { start, end, lines, dirty }
+const pad2 = (n) => String(n).padStart(2, "0");
+const ymd = (d) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const hm = (d) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const hms = (d) => `${hm(d)}:${pad2(d.getSeconds())}`;
+
+function logStart() {
+  if (logSession && !logSession.end) return;
+  logSession = { start: new Date(), end: null, lines: [], dirty: false };
+}
+function logAdd(text, isNote) {
+  if (!logSession || logSession.end) return;
+  logSession.lines.push(isNote ? `　　　　　${text}` : `[${hms(new Date())}] ${text}`);
+  logSession.dirty = true;
+}
+function logPayload() {
+  const s = logSession;
+  // ファイル名は始めた日時（秒まで。同じ分に何回始めても別のファイルになる）
+  const name = `${ymd(s.start)}_${pad2(s.start.getHours())}-${pad2(s.start.getMinutes())}-${pad2(s.start.getSeconds())}`;
+  const head = `こえ検索 文字起こし記録\n日付：${ymd(s.start)}\n時間：${hm(s.start)} 〜 ${s.end ? hm(s.end) : "（記録中）"}\n\n`;
+  return { name, text: head + s.lines.join("\n") + "\n" };
+}
+// ブラウザ版は、止めたときにテキストファイルとしてダウンロードする。
+// 途中で閉じても失われないよう、聞き取り中はこのブラウザの中（localStorage）にも控えを取っておく
+const LOG_BACKUP = "koe-kensaku-web-lastlog";
+function logBackup() {
+  if (!logSession || !logSession.lines.length) return;
+  try { localStorage.setItem(LOG_BACKUP, JSON.stringify(logPayload())); } catch (e) {}
+  logSession.dirty = false;
+}
+function downloadText(name, text) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  a.download = name + ".txt";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+function logStop() {
+  if (!logSession || logSession.end) return;
+  logSession.end = new Date();
+  if (!logSession.lines.length) return;
+  logBackup();
+  const p = logPayload();
+  downloadText(p.name, p.text);
+  setTimeout(() => status(`文字起こしを保存しました（ダウンロード）：${p.name}.txt`, { ms: 10000 }), 50);
+}
+setInterval(() => { if (logSession && !logSession.end && logSession.dirty) logBackup(); }, 30 * 1000);
+window.addEventListener("pagehide", () => { if (logSession && !logSession.end) { logSession.end = new Date(); logBackup(); } });
+
+// ---------- 会話モード（簡易版・AI なし） ----------
+// 辞書（kuromoji）で、話に出てきた固有名詞（地名・作品名・団体名など）と、
+// 漢字が続くまとまった言葉（作業療法、立体造形 など）を見つけて、そのまま投影する。
+// 人物名は「人物名の候補」の決まりにまかせる。
+const NG_WORDS = ["事故", "戦争", "災害", "地震", "震災", "津波", "病", "癌", "がん", "死", "殺", "傷", "怪我", "けが", "暴力", "血", "遺体", "爆", "被害"];
+const COMMON = new Set(["日本", "今日", "明日", "昨日", "本日", "自分", "皆さん", "みなさん", "時間", "場合", "今回", "最初", "最後", "一番", "一緒", "以上", "必要", "可能", "関係", "大学", "人間"]);
+
+function aiHear(text) {
+  if (!settings.aiMode || !tokenizer) return;
+  const toks = tokenizer.tokenize(text);
+  const found = [];
+  const add = (w) => {
+    const n = norm(w);
+    if (w.length < 2 || COMMON.has(w) || excludeSet.has(n)) return;
+    if (NG_WORDS.some((x) => w.includes(x))) return;
+    if (!found.some((f) => norm(f) === n)) found.push(w);
+  };
+  let run = [];   // 名詞が続いているところ
+  const flush = () => {
+    if (run.length) {
+      const w = run.map((t) => t.surface_form).join("");
+      const proper = run.some((t) => t.pos_detail_1 === "固有名詞" && t.pos_detail_2 !== "人名");
+      const person = run.every((t) => t.pos_detail_2 === "人名");
+      // 固有名詞を含むもの、または漢字だけで3文字以上の言葉（失語症、作業療法 など）
+      if (!person && (proper || /^[一-鿿々]{3,}$/.test(w))) add(w);
+    }
+    run = [];
+  };
+  for (const t of toks) {
+    const ok = t.pos === "名詞" && !["代名詞", "非自立", "数", "副詞可能", "接尾"].includes(t.pos_detail_1);
+    const suffix = t.pos === "名詞" && t.pos_detail_1 === "接尾" && run.length;
+    if (ok || suffix) run.push(t); else flush();
+  }
+  flush();
+  for (const w of found) request({ query: w, label: w, kind: "ai" });
+}
+
+function toggleAI() {
+  settings.aiMode = !settings.aiMode;
+  saveSettings(); updatePills();
+  status(settings.aiMode ? "会話モード（簡易版）を始めました" : "会話モードを止めました");
+}
+
+// ---------- 投影ウィンドウ ----------
+// 投影ウィンドウは、このサイトの projection.html。ページが切り替わらないので、
+// 開いたウィンドウをずっと操作でき、一度全画面にすれば講座中そのまま。
+let disp = null;
+let screenInfo = null;   // 2画面目の位置
+
+async function findSecondScreen() {
+  if (!("getScreenDetails" in window)) return null;
+  try {
+    const d = await window.getScreenDetails();
+    return d.screens.find((s) => s !== d.currentScreen) || null;
+  } catch (e) { return null; }
+}
+
+function displayOpen() { return !!disp && !disp.closed; }
+
+async function onOpenDisplay() {
+  if (displayOpen()) { disp.focus(); return status("投影ウィンドウはもう開いています（このまま使えます）。"); }
+  // 先に開く（キーを押した直後でないと、ポップアップとして止められるため）
+  disp = window.open("projection.html", "koe-web-projection", "popup,width=1280,height=800");
+  if (!disp) return status("投影ウィンドウを開けませんでした。アドレスバー右のアイコンから「ポップアップを許可」してください。", { error: true, ms: 0 });
+  if (!screenInfo) screenInfo = await findSecondScreen();   // 初回だけ「ウィンドウ管理」の許可を聞かれます
+  if (screenInfo) {
+    try { disp.moveTo(screenInfo.availLeft, screenInfo.availTop); disp.resizeTo(screenInfo.availWidth, screenInfo.availHeight); } catch (e) {}
+  }
+  updatePills();
+  setTimeout(sendSubStyle, 800);
+  status(screenInfo ? "投影ウィンドウを2画面目に開きました。投影ウィンドウの中をクリックすると全画面になります。"
+    : "投影ウィンドウを開きました。プロジェクターの画面へ移して、中をクリックすると全画面になります。", { ms: 15000 });
+}
+
+// ブラウザ版では写真フォルダは使えない（「=」の後ろが写真の場所なら、言葉そのものを検索する）
+function isPhotoTarget(t) { return /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(t) || /^写真[\/／]/.test(t) || /[\/／]$/.test(t); }
+
+async function navigateDisplay(hit) {
+  if (!displayOpen()) {
+    status("投影ウィンドウが開いていません。O キーで開いてください。", { error: true, ms: 0 });
+    updatePills();
+    return false;
+  }
+  const query = hit.photos ? hit.label : hit.query;
+  webChannel.postMessage({ type: "show", query, label: hit.label, url: hit.url || "" });
+  return true;
+}
+
+// ---------- 表示の順番待ち ----------
+const lastSearched = new Map();   // query → 時刻
+let queue = [];
+let lastShownAt = 0;
+let queueTimer = null;
+let hold = false;
+const history = [];   // { query, kind, at, shown }
+
+function addHistory(item) {
+  history.unshift(item);
+  if (history.length > 60) history.pop();
+  renderHistory();
+}
+
+function request(hit, { force = false } = {}) {
+  const key = norm(hit.query);
+  const now = Date.now();
+  if (!force) {
+    const prev = lastSearched.get(key);
+    if (prev && now - prev < settings.cooldown * 1000) return;
+    if (queue.some((h) => norm(h.query) === key)) return;
+  }
+  lastSearched.set(key, now);
+
+  // 自動で見つけた人物名は投影せず、履歴に候補として並べるだけ
+  if (hit.candidate && !force) {
+    addHistory({ ...hit, at: now, shown: false });
+    status(`${hit.kind === "ai" ? "AIの候補" : "人物名の候補"}「${hit.query}」── 出すときは履歴をクリック（または数字キー）`);
+    return;
+  }
+  if (hold && !force) {
+    addHistory({ ...hit, at: now, shown: false });
+    status(`「${hit.query}」を見つけました（画像を固定中なので、履歴に入れました）`);
+    return;
+  }
+  if (force) { queue = []; showNow(hit); return; }
+  queue.push(hit);
+  if (queue.length > 3) {
+    const dropped = queue.shift();
+    addHistory({ ...dropped, at: now, shown: false });
+  }
+  pump();
+}
+
+function pump() {
+  clearTimeout(queueTimer);
+  if (!queue.length || hold) { renderQueue(); return; }
+  const wait = lastShownAt + settings.minHold * 1000 - Date.now();
+  if (wait > 0) { renderQueue(); queueTimer = setTimeout(pump, wait); return; }
+  showNow(queue.shift());
+  if (queue.length) queueTimer = setTimeout(pump, settings.minHold * 1000);
+  renderQueue();
+}
+
+function showNow(hit) {
+  lastShownAt = Date.now();
+  const item = { ...hit, at: lastShownAt, shown: true };
+  item.candidate = false;
+  $("nowWord").textContent = hit.url ? `${hit.label}（サイト）` : hit.photos ? `${hit.label}（写真）` : hit.query;
+  logAdd(`→ 投影：${hit.url ? hit.label + "（サイト）" : hit.photos ? hit.label + "（写真）" : hit.query}（${KIND[hit.kind] || ""}）`, true);
+  addHistory(item);
+  renderQueue();
+  navigateDisplay(hit).then((ok) => {
+    if (ok) return;
+    item.shown = false;
+    $("nowWord").textContent = "—";
+    renderHistory();
+  });
+}
+
+// 「いま」の画像があと何秒で次に変わるかを、バーと文字で見せる
+function renderQueue() {
+  const holdMs = settings.minHold * 1000;
+  const left = Math.max(0, lastShownAt + holdMs - Date.now());
+  const bar = $("holdBar");
+  bar.style.width = holdMs && lastShownAt ? `${(left / holdMs) * 100}%` : "0%";
+  bar.classList.toggle("held", hold);
+  let html = "";
+  if (hold) html = "<b>固定中</b>：話が進んでも切り替えません（H キーで解除）";
+  else if (queue.length) {
+    html = `<b>あと ${Math.ceil(left / 1000)} 秒</b>で次へ → ` +
+      queue.map((h, i) => `<span class="q">${i + 1}. ${escapeHtml(h.query)}</span>`).join(" ");
+  } else if (left > 0) html = `あと ${Math.ceil(left / 1000)} 秒はこの画像のまま（次の言葉が来たら順番待ち）`;
+  else if (lastShownAt) html = "次の言葉が来たら、すぐに切り替わります";
+  $("queueInfo").innerHTML = html;
+}
+setInterval(renderQueue, 250);
+
+const KIND = { name: "人物名", word: "単語", photo: "写真", site: "サイト", manual: "手入力", ai: "AI" };
+function renderHistory() {
+  const ul = $("history");
+  ul.innerHTML = "";
+  history.forEach((h, i) => {
+    const li = document.createElement("li");
+    if (!h.shown) li.classList.add("skipped");
+    if (h.candidate) li.classList.add("candidate");
+    if (h.candidate && h.kind === "ai") li.classList.add("ai-cand");
+    const t = new Date(h.at);
+    li.innerHTML = `<span class="num">${i < 9 ? i + 1 : ""}</span><span class="w"></span><span class="tag ${h.kind}">${h.candidate ? (h.kind === "ai" ? "AIの候補" : "人物名の候補") : KIND[h.kind]}</span><span class="t">${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}</span>`;
+    li.querySelector(".w").textContent = h.query;
+    li.title = h.candidate ? "クリックで投影／右クリックで今後は候補に出さない" : "クリックでもう一度表示";
+    li.addEventListener("click", () => request({ ...h }, { force: true }));
+    li.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (h.kind !== "name") return;
+      if (!confirm(`「${h.query}」を今後は人物名の候補に出さないようにしますか？`)) return;
+      settings.exclude = (settings.exclude.trim() + "\n" + h.query).trim();
+      $("exclude").value = settings.exclude;
+      saveSettings(); buildLists();
+      status(`「${h.query}」を除外リストに入れました`);
+    });
+    ul.appendChild(li);
+  });
+}
+
+// ---------- 文字起こし ----------
+const transcriptEl = $("transcript");
+let interimEl = null;
+let listening = false;
+let rec = null;
+let lastInterimCheck = 0;
+
+function escapeHtml(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+function highlight(text, hits) {
+  let html = escapeHtml(text);
+  for (const h of hits) {
+    const w = escapeHtml(h.kind === "name" ? h.query : h.label);
+    if (w && html.includes(w)) html = html.split(w).join(`<mark class="${h.kind}">${w}</mark>`);
+  }
+  return html;
+}
+
+function addFinal(text) {
+  const hits = analyze(text, { withNames: true });
+  const p = document.createElement("p");
+  p.className = "line";
+  p.innerHTML = highlight(text, hits);
+  if (interimEl) interimEl.remove();
+  interimEl = null;
+  const hint = transcriptEl.querySelector(".hint");
+  if (hint) hint.remove();
+  transcriptEl.appendChild(p);
+  while (transcriptEl.children.length > 80) transcriptEl.firstChild.remove();
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  logAdd(text);   // 記録は、その発言で出た画像より先に書く
+  hits.forEach((h) => request(h));
+  sendSubtitle("final", text);
+  aiHear(text);
+}
+
+function setInterim(text) {
+  if (!interimEl) {
+    interimEl = document.createElement("p");
+    interimEl.className = "line interim";
+    transcriptEl.appendChild(interimEl);
+  }
+  interimEl.textContent = text;
+  sendSubtitle("interim", text);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+  // 単語リストの言葉は、文が終わるのを待たずに検索（すこし早く出る）
+  const now = Date.now();
+  if (now - lastInterimCheck > 400) {
+    lastInterimCheck = now;
+    analyze(text, { withNames: false }).forEach((h) => request(h));
+  }
+}
+
+// 講座中はずっとつけっぱなしにする前提。
+// Chrome の音声認識は、無音が続いたり、ネットが一瞬切れたりすると勝手に止まるので、
+// 止まったら自動でやり直し、見張り役（watchdog）が固まっていないかも確かめる。
+let running = false;        // いま実際に音声認識が動いているか
+let lastAlive = 0;          // 最後に音声認識から反応があった時刻
+let lastKick = 0;
+let restartDelay = 300;
+let needsPermission = false;
+let wakeLock = null;
+
+function makeRec() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const r = new SR();
+  r.lang = "ja-JP";
+  r.continuous = true;
+  r.interimResults = true;
+  r.onstart = () => { running = true; lastAlive = Date.now(); updatePills(); };
+  r.onaudiostart = r.onspeechstart = () => { lastAlive = Date.now(); };
+  r.onresult = (e) => {
+    lastAlive = Date.now();
+    restartDelay = 300;
+    let interim = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      const res = e.results[i];
+      if (res.isFinal) addFinal(res[0].transcript.trim());
+      else interim += res[0].transcript;
+    }
+    if (interim) setInterim(interim);
+  };
+  r.onerror = (e) => {
+    if (e.error === "no-speech" || e.error === "aborted") return;
+    if (e.error === "not-allowed" || e.error === "service-not-allowed") {
+      needsPermission = true;
+      status("マイクが許可されていません。アドレスバー左のアイコンからマイクを「許可」して、スペースキーを押してください。", { error: true, ms: 0 });
+    } else if (e.error === "network") {
+      restartDelay = Math.min(restartDelay * 2, 10000);
+      status("インターネットが不安定です。つながりしだい自動で聞き取りを再開します。", { error: true, ms: 10000 });
+    } else if (e.error === "audio-capture") {
+      restartDelay = 3000;
+      status("マイクが見つかりません。マイクをつなぎ直してください（自動でやり直します）。", { error: true, ms: 10000 });
+    } else {
+      status("音声認識のエラー: " + e.error + "（自動でやり直します）", { error: true });
+    }
+  };
+  r.onend = () => {
+    running = false;
+    updatePills();
+    if (listening && !needsPermission) setTimeout(kick, restartDelay);
+  };
+  return r;
+}
+
+function kick() {
+  if (!listening || running || needsPermission) return;
+  lastKick = Date.now();
+  try { rec.start(); } catch (e) {
+    // 前のものが固まっているときは、作り直す
+    try { rec.abort(); } catch (e2) {}
+    rec = makeRec();
+    try { rec.start(); } catch (e3) {}
+  }
+}
+
+// 見張り役：3秒ごとに、止まっていたら起こす。反応が5分ないときは念のためやり直す
+setInterval(() => {
+  if (!listening) return;
+  const now = Date.now();
+  if (!running && now - lastKick > 3000) kick();
+  else if (running && now - lastAlive > 5 * 60 * 1000) {
+    lastAlive = now;
+    try { rec.abort(); } catch (e) {}
+  }
+  renderListenBanner();
+}, 3000);
+window.addEventListener("online", () => { restartDelay = 300; kick(); });
+
+// パソコンの画面が暗くならないようにする
+async function keepAwake() {
+  try { if ("wakeLock" in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request("screen"); wakeLock.onrelease = () => { wakeLock = null; }; } } catch (e) {}
+}
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { keepAwake(); kick(); } });
+
+function startListening() {
+  if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) {
+    status("このブラウザは音声認識に対応していません。Google Chrome で開いてください。", { error: true, ms: 0 });
+    return;
+  }
+  listening = true;
+  needsPermission = false;
+  stoppedByOtherTab = false;
+  logStart();
+  claimMic();
+  restartDelay = 300;
+  if (!rec) rec = makeRec();
+  kick();
+  keepAwake();
+  updatePills();
+  renderListenBanner();
+  status("聞き取りを始めました。このままつけっぱなしで大丈夫です。");
+}
+
+function stopListening() {
+  listening = false;
+  logStop();
+  if (rec) { try { rec.stop(); } catch (e) {} }
+  if (interimEl) { interimEl.remove(); interimEl = null; }
+  updatePills();
+  renderListenBanner();
+  status("聞き取りを止めました（スペースキーで再開）");
+}
+
+// こえ検索のタブが2つあると、マイクを取り合って聞き取りがついたり消えたりする。
+// 新しく開いた（またはスペースキーで再開した）タブが、ほかのタブの聞き取りを止める。
+const tabChannel = "BroadcastChannel" in window ? new BroadcastChannel("koe-kensaku") : null;
+let stoppedByOtherTab = false;
+function claimMic() { if (tabChannel) tabChannel.postMessage({ type: "claim" }); }
+if (tabChannel) tabChannel.onmessage = (e) => {
+  if (e.data?.type !== "claim" || !listening) return;
+  stopListening();
+  stoppedByOtherTab = true;
+  renderListenBanner();
+};
+
+function renderListenBanner() {
+  const el = $("listenBanner");
+  let msg = "";
+  if (!listening && stoppedByOtherTab) msg = "別のタブでこえ検索が動いているので、このタブは止めました。このタブは閉じてください";
+  else if (!listening) msg = "聞き取りは止まっています ── スペースキーで再開";
+  else if (needsPermission) msg = "マイクの許可が必要です ── 許可してからスペースキー";
+  else if (!running && Date.now() - lastKick > 4000) msg = "聞き取りをやり直しています…";
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+
+// ---------- 操作 ----------
+function updatePills() {
+  $("pListen").classList.toggle("on", listening && running);
+  $("pListen").firstChild.textContent = listening ? "聞き取り中" : "聞き取り";
+  $("pNames").classList.toggle("on", settings.autoNames);
+  $("pWords").classList.toggle("on", settings.autoWords);
+  $("pHold").classList.toggle("on", hold);
+  $("pAI").classList.toggle("on", settings.aiMode);
+  const open = displayOpen();
+  $("pDisplay").classList.toggle("on", open);
+  $("pDisplay").firstChild.textContent = open ? "投影ウィンドウ" : "投影ウィンドウを開く";
+}
+setInterval(updatePills, 1500);
+
+const actions = {
+  listen: () => (listening ? stopListening() : startListening()),
+  display: onOpenDisplay,
+  names: () => { settings.autoNames = !settings.autoNames; saveSettings(); updatePills(); },
+  words: () => { settings.autoWords = !settings.autoWords; saveSettings(); updatePills(); },
+  hold: () => { hold = !hold; updatePills(); if (!hold) pump(); renderQueue(); },
+  fullscreen: () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()),
+};
+$("pListen").onclick = actions.listen;
+$("pDisplay").onclick = actions.display;
+$("pNames").onclick = actions.names;
+$("pWords").onclick = actions.words;
+$("pHold").onclick = actions.hold;
+$("pAI").onclick = () => toggleAI();
+
+document.addEventListener("keydown", (e) => {
+  const typing = /^(INPUT|TEXTAREA)$/.test(document.activeElement.tagName);
+  if (typing) {
+    if (e.key === "Escape") document.activeElement.blur();
+    return;
+  }
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const k = e.key.toLowerCase();
+  if (e.code === "Space") { e.preventDefault(); actions.listen(); }
+  else if (k === "o") actions.display();
+  else if (k === "k") toggleAI();
+  else if (k === "n") actions.names();
+  else if (k === "w") actions.words();
+  else if (k === "h") actions.hold();
+  else if (k === "f") actions.fullscreen();
+  else if (k === "+" || k === "=" || k === ";") { settings.subScale = Math.min(2, +(settings.subScale + 0.1).toFixed(2)); saveSettings(); sendSubStyle(); status(`字幕の大きさ：${Math.round(settings.subScale * 100)}%`); }
+  else if (k === "-") { settings.subScale = Math.max(0.5, +(settings.subScale - 0.1).toFixed(2)); saveSettings(); sendSubStyle(); status(`字幕の大きさ：${Math.round(settings.subScale * 100)}%`); }
+  else if (k === "c") { clearSubtitle(); status("字幕を消しました"); }
+  else if (k === "/") { e.preventDefault(); $("manual").focus(); }
+  else if (/^[1-9]$/.test(k)) {
+    const h = history[Number(k) - 1];
+    if (h) request({ ...h }, { force: true });
+  }
+});
+
+$("manual").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.isComposing) {
+    const q = e.target.value.trim();
+    if (!q) return;
+    request({ query: q, label: q, kind: "manual" }, { force: true });
+    e.target.value = "";
+    e.target.blur();
+  }
+});
+
+// 設定欄
+$("words").value = settings.words;
+$("exclude").value = settings.exclude;
+$("minHold").value = settings.minHold;
+$("cooldown").value = settings.cooldown;
+$("logDownload").onclick = () => {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem(LOG_BACKUP) || "null"); } catch (e) {}
+  if (p) downloadText(p.name, p.text); else status("まだ記録がありません");
+};
+$("subPos").value = settings.subPos;
+$("subPos").onchange = () => { settings.subPos = $("subPos").value; saveSettings(); sendSubStyle(); };
+$("save").onclick = () => {
+  settings.words = $("words").value;
+  settings.exclude = $("exclude").value;
+  settings.minHold = Math.max(0, Number($("minHold").value) || 0);
+  settings.cooldown = Math.max(0, Number($("cooldown").value) || 0);
+  saveSettings(); buildLists();
+  status(`保存しました（単語リスト ${entries.length} 語）`);
+};
+
+// ---------- 起動 ----------
+updatePills();
+status("辞書を読み込み中…", { ms: 0 });
+kuromoji.builder({ dicPath: "lib/dict/" }).build((err, t) => {
+  if (err) return status("辞書の読み込みに失敗しました: " + err, { error: true, ms: 0 });
+  tokenizer = t;
+  buildLists();
+  status(`準備ができました（単語リスト ${entries.length} 語）。O キーで投影ウィンドウを開いてください。聞き取りは自動で始まります。`, { ms: 0 });
+  // 開いたらすぐに聞き取りを始める（つけっぱなし前提）
+  startListening();
+});
+// 動作確認用
+window.__koe = { analyze, addFinal, request, get entries() { return entries; } };
+</script>
+</body>
+</html>
