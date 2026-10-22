@@ -45,6 +45,7 @@
   }
   #manual:focus { border-color: var(--thread); }
 
+  #listenBanner.idle { background: var(--thread2) !important; }
   #listenBanner { background: #b00020; color: #fff; font-size: 18px; font-weight: 600; text-align: center; padding: 10px; }
   main { flex: 1; display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
   #transcript {
@@ -128,7 +129,7 @@
   <div id="transcript">
     <p class="hint">
       ① <b>O</b> キーで投影ウィンドウを開き、2画面目（プロジェクター）に移します。投影ウィンドウの中をクリックすると全画面になります。<br>
-      ② 聞き取りは自動で始まり、講座中ずっと続きます（止まっても自動でやり直します）。<br>
+      ② 上の「<b>聞き取り</b>」ボタン（または<b>スペース</b>キー）で聞き取りを始めます。始めたあとは、止めるまでずっと続きます（途中で止まっても自動でやり直します）。<br>
       話した言葉の中に「単語リストの言葉」が出てくると、投影ウィンドウに Wikipedia の写真が出ます。<br>
       字幕（ルビ付き）は、投影ウィンドウの上か下に重なります。
     </p>
@@ -190,7 +191,7 @@
       </label>
       <button class="small" id="save">保存して反映</button>
       <div class="keys" style="margin-top:14px">
-        <kbd>Space</kbd> 聞き取り 停止／再開（ふだんは押さなくてOK）<br>
+        <kbd>Space</kbd> 聞き取り 開始／停止<br>
         <kbd>O</kbd> 投影ウィンドウを開く<br>
         <kbd>H</kbd> 画像を固定（自動で切り替えない）<br>
         <kbd>N</kbd> 人物名の候補を並べる ON／OFF<br>
@@ -823,6 +824,7 @@ function startListening() {
     return;
   }
   listening = true;
+  everListened = true;
   needsPermission = false;
   stoppedByOtherTab = false;
   logStart();
@@ -850,6 +852,7 @@ function stopListening() {
 // 新しく開いた（またはスペースキーで再開した）タブが、ほかのタブの聞き取りを止める。
 const tabChannel = "BroadcastChannel" in window ? new BroadcastChannel("koe-kensaku") : null;
 let stoppedByOtherTab = false;
+let everListened = false;   // 一度でも聞き取りを始めたか（案内の文を変えるため）
 function claimMic() { if (tabChannel) tabChannel.postMessage({ type: "claim" }); }
 if (tabChannel) tabChannel.onmessage = (e) => {
   if (e.data?.type !== "claim" || !listening) return;
@@ -862,11 +865,12 @@ function renderListenBanner() {
   const el = $("listenBanner");
   let msg = "";
   if (!listening && stoppedByOtherTab) msg = "別のタブでこえ検索が動いているので、このタブは止めました。このタブは閉じてください";
-  else if (!listening) msg = "聞き取りは止まっています ── スペースキーで再開";
+  else if (!listening) msg = everListened ? "聞き取りは止まっています ── 「聞き取り」ボタンかスペースキーで再開" : "「聞き取り」ボタン（またはスペースキー）を押すと、聞き取りを始めます";
   else if (needsPermission) msg = "マイクの許可が必要です ── 許可してからスペースキー";
   else if (!running && Date.now() - lastKick > 4000) msg = "聞き取りをやり直しています…";
   el.textContent = msg;
   el.hidden = !msg;
+  el.classList.toggle("idle", !listening && !everListened);   // 始める前は赤ではなく緑の案内
 }
 
 // ---------- 操作 ----------
@@ -961,9 +965,9 @@ kuromoji.builder({ dicPath: "lib/dict/" }).build((err, t) => {
   if (err) return status("辞書の読み込みに失敗しました: " + err, { error: true, ms: 0 });
   tokenizer = t;
   buildLists();
-  status(`準備ができました（単語リスト ${entries.length} 語）。O キーで投影ウィンドウを開いてください。聞き取りは自動で始まります。`, { ms: 0 });
-  // 開いたらすぐに聞き取りを始める（つけっぱなし前提）
-  startListening();
+  status(`準備ができました（単語リスト ${entries.length} 語）。O キーで投影ウィンドウを開き、「聞き取り」ボタン（またはスペースキー）で聞き取りを始めてください。`, { ms: 0 });
+  // ブラウザ版は、開いたときは聞き取りオフ。「聞き取り」ボタンかスペースキーで始める
+  renderListenBanner();
 });
 // 動作確認用
 window.__koe = { analyze, addFinal, request, get entries() { return entries; } };
