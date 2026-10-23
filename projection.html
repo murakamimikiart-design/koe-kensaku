@@ -89,33 +89,62 @@ async function wikiJson(params) {
 // 受講者の方がつらくなりそうな写真（病気・けが・事故・戦争など）の記事は、写真に使わない。
 // ただし、話している言葉そのものにその字が入っているとき（「失語症」など）は外さない
 const NG_TITLE = ["梗塞", "卒中", "出血", "腫瘍", "癌", "がん", "病", "症候群", "障害", "損傷", "外傷", "骨折", "震盪", "挫傷", "麻痺", "発作", "感染", "手術", "死", "遺体", "解剖",
-  "事故", "事件", "戦争", "空襲", "原爆", "爆撃", "災害", "地震", "震災", "津波", "火災", "殺", "虐", "暴力", "テロ"];
+  "断層撮影", "磁気共鳴", "MRI", "CT", "画像診断", "事故", "事件", "戦争", "空襲", "原爆", "爆撃", "災害", "地震", "震災", "津波", "火災", "殺", "虐", "暴力", "テロ"];
+// 記事の中の写真のファイル名（英語が多い）も同じように見る
+// 「engraving」「Edward」などを外さないよう、短い語は単語として見る
+const NG_FILE = /death|(?<![a-z])(dead|grave|war|wars|ct|mri)(?![a-z])|corpse|in_a_jar|dissect|cadaver|funeral|injur|wound|accident|disaster|bomb|surgery|autopsy|tomograph|stuffed|specimen|剥製|葬|墓/i;
 const okTitle = (title, q) => !NG_TITLE.some((w) => title.includes(w) && !q.includes(w));
 
-// 記事の中の写真（写真らしい jpg/png だけ）
+// 記事の中の写真（写真らしい jpg/png だけ。アイコンや旗の絵は外す）
+// URL の後ろに「?utm_source=…」が付くので、拡張子はパスの部分で見る
 async function articleImages(title) {
-  const m = await wikiJson({ action: "query", titles: title, generator: "images", gimlimit: 30,
+  const m = await wikiJson({ action: "query", titles: title, generator: "images", gimlimit: 40,
     prop: "imageinfo", iiprop: "url|size", iiurlwidth: 1200 });
   return Object.values(m.query?.pages || {})
     .map((f) => f.imageinfo?.[0])
-    .filter((i) => i && /\.(jpe?g|png)$/i.test(i.url) && i.width >= 300 && i.height >= 200)
+    .filter((i) => i && /\.(jpe?g|png)$/i.test(new URL(i.url).pathname) && i.width >= 150 && i.height >= 150)
     .map((i) => ({ src: i.thumburl, cap: title }));
 }
 
+// 写真のない短い記事（「安藤士」など）は、その記事に出てくる言葉の記事の写真を出す。
+// 長い記事は出てくる言葉が多すぎて関係の薄いものばかりになるので、検索の結果にまかせる
+async function linkedImages(title) {
+  const d = await wikiJson({ action: "query", titles: title, generator: "links", gplnamespace: 0, gpllimit: 50,
+    prop: "pageimages", piprop: "thumbnail", pithumbsize: 1200, pilimit: 50 });
+  if (d.continue) return [];
+  return Object.values(d.query?.pages || {})
+    .filter((p) => p.thumbnail && !/\.svg/i.test(p.thumbnail.source) && !/^\d|年|月|日$/.test(p.title))
+    .map((p) => ({ src: p.thumbnail.source, cap: p.title }));
+}
+
 // 言葉そのものの記事（「脳」なら「脳」）を先に、そのあと検索に合う記事の「代表の写真」を並べる
+// 単語リストの「=」の後ろが「安藤照 彫刻家 ハチ公」のように何語かあるときは、最初の言葉を記事の名前として探す
 async function wikiImages(q, max = 6) {
-  const d = await wikiJson({ action: "query", generator: "search", gsrsearch: q, gsrlimit: 12,
-    prop: "pageimages", piprop: "thumbnail", pithumbsize: 1200, pilimit: 12, redirects: 1 });
+  const head = q.trim().split(/[\s　]+/)[0];
+  const [d, t] = await Promise.all([
+    wikiJson({ action: "query", generator: "search", gsrsearch: q, gsrlimit: 12,
+      prop: "pageimages", piprop: "thumbnail", pithumbsize: 1200, pilimit: 12, redirects: 1 }),
+    // 記事の名前そのもので引く（「ハチ公」→ 転送で「忠犬ハチ公」）。曖昧さ回避のページは使わない
+    wikiJson({ action: "query", titles: head, redirects: 1, prop: "pageimages|pageprops",
+      piprop: "thumbnail", pithumbsize: 1200, ppprop: "disambiguation" }),
+  ]);
   let pages = Object.values(d.query?.pages || {}).sort((a, b) => a.index - b.index).filter((p) => okTitle(p.title, q));
-  const exact = pages.find((p) => norm(p.title) === norm(q));
-  if (exact) pages = [exact, ...pages.filter((p) => p !== exact)];
+  const direct = Object.values(t.query?.pages || {})
+    .find((p) => !("missing" in p) && !("invalid" in p) && !p.pageprops && okTitle(p.title, q));
+  const exact = direct || pages.find((p) => norm(p.title) === norm(q) || norm(p.title) === norm(head));
+  if (exact) pages = [exact, ...pages.filter((p) => p.title !== exact.title)];
   const out = [];
-  const push = (im) => { if (out.length < max && !out.some((o) => o.src === im.src)) out.push(im); };
-  if (exact?.thumbnail) push({ src: exact.thumbnail.source, cap: exact.title });
-  // 言葉そのものの記事があれば、その記事の写真をもう少し足す
-  if (exact) { try { (await articleImages(exact.title)).slice(0, 3).forEach(push); } catch (e) {} }
+  const push = (im) => { if (out.length < max && !NG_FILE.test(fileName(im.src)) && !out.some((o) => fileName(o.src) === fileName(im.src))) out.push(im); };
+  // いちばん合う記事（言葉そのものの記事、なければ検索の1番目。「ハチ公」→「忠犬ハチ公」）の写真を先に
+  const main = exact || pages[0];
+  if (main?.thumbnail) push({ src: main.thumbnail.source, cap: main.title });
+  if (main) { try { (await articleImages(main.title)).filter((im) => okTitle(fileName(im.src), q)).slice(0, 4).forEach(push); } catch (e) {} }
+  // 言葉そのものの記事に写真がないときは、その記事に出てくる言葉の写真（別の同じ名字の人より近い）
+  if (exact && out.length === 0) { try { (await linkedImages(exact.title)).filter((im) => okTitle(im.cap, q)).forEach(push); } catch (e) {} }
   for (const p of pages) if (p.thumbnail) push({ src: p.thumbnail.source, cap: p.title });
-  if (out.length < 4 && pages[0] && pages[0] !== exact) { try { (await articleImages(pages[0].title)).forEach(push); } catch (e) {} }
+  // 何も見つからず、ほかの言葉もあるときは、2つ目からの言葉で探し直す（「セラピーパテ リハビリ」→「リハビリ」）
+  const rest = q.trim().split(/[\s　]+/).slice(1).join(" ");
+  if (!out.length && rest) return wikiImages(rest, max);
   return out;
 }
 // 写真の作者とライセンス（Wikimedia Commons の写真は CC BY-SA などで、表示が必要）
