@@ -252,7 +252,7 @@ const DEFAULTS = {
   exclude: "",
   suffix: "",
   minHold: 6,
-  cooldown: 30,      // 同じ言葉を出し直さない秒数（思いがけない写真がまた出てもいいので短め）
+  cooldown: 40,      // 同じ言葉を出し直さない秒数（思いがけない写真がまた出てもいいので短め）
   autoNames: true,
   autoWords: true,
 };
@@ -260,7 +260,7 @@ const STORE = "koe-kensaku-web-settings";
 let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch (e) {}
 // 前の決まり（2分）のまま保存されていたら、30秒に直す（1回だけ）
-if (!settings.v2) { if (settings.cooldown === 120) settings.cooldown = 30; settings.v2 = true; try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
+if (!settings.v3) { if (settings.cooldown === 120 || settings.cooldown === 30) settings.cooldown = 40; settings.v2 = settings.v3 = true; try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
 function saveSettings() { try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
 
 const $ = (id) => document.getElementById(id);

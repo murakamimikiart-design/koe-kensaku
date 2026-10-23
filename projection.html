@@ -20,7 +20,9 @@
   #standby p, #msg { font-size: 2.6vh; color: var(--muted); line-height: 1.8; }
   #fsBtn { margin-top: 3vh; font-size: 2.6vh; padding: 1.4vh 3vw; border-radius: 999px; border: none; background: #4a7a68; color: #fff; cursor: pointer; }
   iframe { flex: 1; border: 0; width: 100%; background: #fff; }
-  #credit { position: absolute; right: 1vw; bottom: 0.4vh; font-size: 1.3vh; color: var(--muted); }
+  figcaption .lic { display: block; font-size: 1.4vh; color: #a39b8c; overflow: hidden; text-overflow: ellipsis; }
+  #credit { text-align: right; font-size: 1.4vh; color: var(--muted); padding: 0 2.4vw 0.8vh; }
+  #credit:empty { display: none; }
 
   /* 字幕（ルビ付き）。操作画面の設定で上・下を選べる */
   #bar { position: absolute; left: 0; right: 0; box-sizing: border-box; padding: 1.2vh 3vw; background: rgba(31, 28, 24, 0.92);
@@ -39,6 +41,7 @@
   body.embed #standby p { font-size: 15px; padding: 0 16px; }
   body.embed #bar { font-size: calc(19px * var(--scale)); padding: 8px 14px; }
   body.embed figcaption { font-size: 11px; }
+  body.embed figcaption .lic, body.embed #credit { font-size: 9px; }
   body.embed #word { font-size: 22px; }
   body.embed #grid { gap: 6px; padding: 8px; }
 </style>
@@ -53,7 +56,6 @@
   </div>
 </div>
 <div id="bar" class="bottom"><div class="line"></div><div class="line"></div><div class="line" id="measure"></div></div>
-<div id="credit"></div>
 <script>
 // 操作画面（index.html）から BroadcastChannel「koe-web」で指示が届く。
 //   show  : { query, label, url? } → Wikipedia の画像を並べる（url があればそのページ）
@@ -110,18 +112,39 @@ async function wikiImages(q, max = 6) {
   if (out.length < 4 && pages[0] && pages[0] !== exact) { try { (await articleImages(pages[0].title)).forEach(push); } catch (e) {} }
   return out;
 }
+// 写真の作者とライセンス（Wikimedia Commons の写真は CC BY-SA などで、表示が必要）
+// サムネイルの URL からファイル名を取り出し、まとめて問い合わせる
+function fileName(src) {
+  const parts = new URL(src).pathname.split("/");
+  const i = parts.indexOf("thumb");
+  return decodeURIComponent(i >= 0 ? parts[i + 3] : parts[parts.length - 1]);
+}
+const plain = (h) => (new DOMParser().parseFromString(h || "", "text/html").body.textContent || "").replace(/\((talk|トーク|会話)\)/gi, "").replace(/\s+/g, " ").trim();
+async function credits(imgs) {
+  const names = [...new Set(imgs.map((im) => fileName(im.src)))];
+  const d = await wikiJson({ action: "query", titles: names.map((n) => "File:" + n).join("|"),
+    prop: "imageinfo", iiprop: "extmetadata", iiextmetadatafilter: "Artist|Attribution|LicenseShortName" });
+  const byName = {};
+  for (const p of Object.values(d.query?.pages || {})) {
+    const md = p.imageinfo?.[0]?.extmetadata || {};
+    const who = plain(md.Attribution?.value) || plain(md.Artist?.value);
+    const lic = plain(md.LicenseShortName?.value);
+    byName[p.title.replace(/^[^:]+:/, "").replace(/ /g, "_")] = [who, lic].filter(Boolean).join(" / ");
+  }
+  for (const im of imgs) im.lic = byName[fileName(im.src).replace(/ /g, "_")] || "";
+}
 const norm = (t) => t.normalize("NFKC").replace(/[\s・･]/g, "").toLowerCase();
 
 let showSeq = 0;
 async function show(m) {
   const seq = ++showSeq;
-  $("credit").textContent = "";
   if (m.url) {
     stage.innerHTML = `<iframe src="${encodeURI(m.url)}"></iframe>`;
     return;
   }
   let imgs = [];
   try { imgs = await wikiImages(m.query); } catch (e) {}
+  try { await credits(imgs); } catch (e) {}
   if (seq !== showSeq) return;   // 待っている間に次の言葉が来た
   if (!imgs.length) {
     stage.innerHTML = `<div id="msg"></div><div id="word"></div>`;
@@ -129,7 +152,7 @@ async function show(m) {
     return;
   }
   const n = imgs.length, cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
-  stage.innerHTML = `<div id="grid"></div><div id="word"></div>`;
+  stage.innerHTML = `<div id="grid"></div><div id="word"></div><div id="credit"></div>`;
   const grid = $("grid");
   grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
   grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, 1fr)`;
@@ -139,11 +162,15 @@ async function show(m) {
     img.src = im.src; img.alt = im.cap;
     const c = document.createElement("figcaption");
     c.textContent = im.cap;
+    const lic = document.createElement("span");
+    lic.className = "lic";
+    lic.textContent = "写真：" + (im.lic || "作者・ライセンスは Wikimedia Commons の各ページ");
+    c.appendChild(lic);
     f.append(img, c);
     grid.appendChild(f);
   }
   $("word").textContent = m.label;
-  $("credit").textContent = "写真：Wikipedia / Wikimedia Commons";
+  $("credit").textContent = "写真：Wikipedia / Wikimedia Commons より（各写真の下に 作者 / ライセンス）";
 }
 
 // ---------- 字幕（ルビ付き） ----------
