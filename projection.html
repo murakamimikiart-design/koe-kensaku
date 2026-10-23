@@ -60,14 +60,15 @@
     <button id="fsBtn">クリックで全画面にする（F キー）</button>
   </div>
 </div>
-<div id="bar" class="bottom"><div class="line"></div><div class="line"></div><div class="line" id="measure"></div></div>
+<div id="bar" class="bottom"><div class="line" id="measure"></div></div>
 <script>
 // 操作画面（index.html）から BroadcastChannel「koe-web」で指示が届く。
 //   show  : { query, label, url? } → Wikipedia の画像を並べる（url があればそのページ）
 //   final / interim : 字幕の文字 [[文字, ルビ], ...]
 //   style : { scale, pos }   clear : 字幕を消す
 const ch = new BroadcastChannel("koe-web");
-if (new URLSearchParams(location.search).has("embed")) document.body.classList.add("embed");
+const embed = new URLSearchParams(location.search).has("embed");
+if (embed) document.body.classList.add("embed");
 const stage = document.getElementById("stage");
 const $ = (id) => document.getElementById(id);
 
@@ -196,7 +197,14 @@ async function show(m) {
 const LINE_SECONDS = 10;   // 1行を使う時間。これを過ぎて話が続いたら次の行へ
 let lines = [], interim = [];
 const bar = $("bar"), measureEl = $("measure");
-const [l0, l1] = bar.querySelectorAll(".line");
+// 字幕の行数。スマートフォンは画面が細く1行に入る文字が少ないので4行
+const SHOW_LINES = embed ? 4 : 2;
+const lineEls = Array.from({ length: SHOW_LINES }, () => {
+  const el = document.createElement("div");
+  el.className = "line";
+  bar.insertBefore(el, measureEl);
+  return el;
+});
 
 function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function html(tokens, cls) {
@@ -234,16 +242,16 @@ function render() {
   const now = Date.now();
   const view = lines.map((l) => ({ at: l.at, tokens: l.tokens.map((t) => [...t, false]) }));
   if (interim.length) place(view, [["　", "", true], ...interim.map((t) => [...t, true])], now);
-  const last2 = view.slice(-2);
-  [l0, l1].forEach((el, i) => {
-    const l = last2[i];
+  const shown = view.slice(-SHOW_LINES);
+  lineEls.forEach((el, i) => {
+    const l = shown[i];
     if (!l) { el.innerHTML = ""; el.classList.remove("old"); return; }
     let out = "", buf = [], mode = null;
     const flush = () => { if (buf.length) out += html(buf, mode ? "interim" : ""); buf = []; };
     for (const t of l.tokens) { if (t[2] !== mode) { flush(); mode = t[2]; } buf.push(t); }
     flush();
     el.innerHTML = out;
-    el.classList.toggle("old", last2.length === 2 && i === 0);
+    el.classList.toggle("old", i < shown.length - 1);   // いちばん新しい行以外は少し暗く
   });
   bar.classList.toggle("on", view.length > 0);
   // 写真が字幕に隠れないよう、字幕の分だけ空けて並べる
@@ -255,7 +263,7 @@ function render() {
 ch.onmessage = (e) => {
   const m = e.data || {};
   if (m.type === "show") return show(m);
-  if (m.type === "final") { interim = []; place(lines, [["　", ""], ...m.tokens], Date.now()); if (lines.length > 6) lines = lines.slice(-6); }
+  if (m.type === "final") { interim = []; place(lines, [["　", ""], ...m.tokens], Date.now()); if (lines.length > 8) lines = lines.slice(-8); }
   else if (m.type === "interim") interim = m.tokens || [];
   else if (m.type === "clear") { lines = []; interim = []; }
   else if (m.type === "style") {
