@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>こえ検索（ブラウザ版）</title>
 <style>
   :root {
@@ -44,6 +44,26 @@
     border-radius: 999px; width: 240px; outline: none; background: #fff;
   }
   #manual:focus { border-color: var(--thread); }
+
+  /* ---------- スマートフォン表示（画面が1つなので、写真と字幕をこの画面の中に出す） ---------- */
+  #phoneView { display: none; }
+  body.phone header { padding: 10px 12px calc(10px) 12px; gap: 8px; padding-top: max(10px, env(safe-area-inset-top)); }
+  body.phone header h1 { font-size: 16px; width: 100%; margin: 0; }
+  body.phone .pill { font-size: 14px; padding: 8px 12px; }
+  body.phone .pill kbd, body.phone #pDisplay, body.phone .grow { display: none; }
+  body.phone #pListen { order: -1; font-size: 18px; font-weight: 700; padding: 12px 22px; flex-basis: 100%; text-align: center; }
+  body.phone #manual { width: 100%; font-size: 16px; }
+  body.phone #listenBanner { font-size: 15px; padding: 8px; }
+  body.phone { height: auto; min-height: 100%; }
+  body.phone main { display: flex; flex-direction: column; flex: none; }
+  body.phone #transcript { display: none; }
+  body.phone #phoneView { display: block; height: 62vh; border: 0; width: 100%; background: var(--paper); }
+  body.phone aside { border-left: 0; border-top: 1px solid var(--line); }
+  body.phone #history { max-height: 40vh; }
+  body.phone .now { padding: 8px 14px; }
+  body.phone #nowWord { font-size: 18px; min-height: 0; }
+  body.phone #status { font-size: 12px; }
+  body.phone .settings { grid-template-columns: 1fr; }
 
   #listenBanner.idle { background: var(--thread2) !important; }
   #listenBanner { background: #b00020; color: #fff; font-size: 18px; font-weight: 600; text-align: center; padding: 10px; }
@@ -126,6 +146,7 @@
 
 <div id="listenBanner" hidden></div>
 <main>
+  <iframe id="phoneView" title="写真と字幕"></iframe>
   <div id="transcript">
     <p class="hint">
       ① <b>O</b> キーで投影ウィンドウを開き、2画面目（プロジェクター）に移します。投影ウィンドウの中をクリックすると全画面になります。<br>
@@ -167,9 +188,15 @@
       履歴の言葉を右クリックすると、ここに追加できます。</p>
       <div class="ai-box">
         <h3>会話モード（簡易版・AI なし）</h3>
-        <p class="note" style="margin-top:0">話に出てきた地名・作品名・団体名などの固有名詞や、「作業療法」のような漢字のまとまった言葉を、辞書で見つけて自動で投影します。
+        <p class="note" style="margin-top:0">話に出てきた名詞（粘土、犬、地名、作品名、「作業療法」のような言葉など）を辞書で見つけて、自動で投影します。
         AI もインターネット上のサービスも使いません（写真の検索だけ Wikipedia を使います）。<br>
         事故・戦争・病気など、つらい写真が出そうな言葉は出しません。</p>
+        <label>拾う言葉の多さ
+          <select id="aiLevel" style="width:100%;font-size:14px;padding:6px;margin-top:4px;border:1px solid var(--line);border-radius:8px">
+            <option value="normal">ふつう（粘土・犬・脳 などのふつうの名詞も拾う）</option>
+            <option value="few">少なめ（地名・作品名などと、漢字3文字以上の言葉だけ）</option>
+          </select>
+        </label>
       </div>
       <div class="ai-box">
         <h3>文字起こしの記録</h3>
@@ -219,7 +246,8 @@ const DEFAULTS = {
     "モナリザ|モナ・リザ = モナ・リザ 絵画",
   ].join("\n"),
   subScale: 1,       // 字幕の文字の大きさ（1 = ふつう）
-  aiMode: false,     // 会話モード
+  aiMode: true,      // 会話モード（簡易版）。ブラウザ版でははじめからオン
+  aiLevel: "normal", // 会話モードで拾う言葉の多さ（normal：ふつう / few：少なめ）
   subPos: "bottom",  // 字幕の位置（top / bottom）
   exclude: "",
   suffix: "",
@@ -485,7 +513,13 @@ window.addEventListener("pagehide", () => { if (logSession && !logSession.end) {
 // 漢字が続くまとまった言葉（作業療法、立体造形 など）を見つけて、そのまま投影する。
 // 人物名は「人物名の候補」の決まりにまかせる。
 const NG_WORDS = ["事故", "戦争", "災害", "地震", "震災", "津波", "病", "癌", "がん", "死", "殺", "傷", "怪我", "けが", "暴力", "血", "遺体", "爆", "被害"];
-const COMMON = new Set(["日本", "今日", "明日", "昨日", "本日", "自分", "皆さん", "みなさん", "時間", "場合", "今回", "最初", "最後", "一番", "一緒", "以上", "必要", "可能", "関係", "大学", "人間"]);
+const ONE_CHAR_COMMON = "人方時事物所前後中上下横間先次日年月回話声気力形色数点部分側面今心頭身体名字者家内外以他何彼私僕俺君様方々";
+// 写真にしても意味の伝わりにくい、ありふれた言葉（拾わない）
+const COMMON = new Set(("日本 今日 明日 昨日 本日 自分 皆さん みなさん 時間 場合 今回 最初 最後 一番 一緒 以上 以下 必要 可能 関係 大学 人間 " +
+  "こと もの ところ とき ため よう そう ほう 感じ 気持ち 気分 意味 言葉 理由 部分 問題 状態 結果 方法 内容 仕事 経験 知識 能力 " +
+  "世界 社会 最近 全部 全員 大事 普通 本当 大丈夫 前後 周り 自体 場所 方向 目的 意識 思い 考え 説明 話題 質問 答え 名前 " +
+  "お話 話 皆様 今度 次回 毎日 毎回 先日 当日 時代 年代 以前 以後 途中 最中 一部 全体 程度 具合 様子 存在 対象 状況 環境 情報 " +
+  "ワークショップ セッション テーマ ポイント イメージ タイプ ケース パターン レベル ステップ").split(" "));
 
 function aiHear(text) {
   if (!settings.aiMode || !tokenizer) return;
@@ -493,7 +527,9 @@ function aiHear(text) {
   const found = [];
   const add = (w) => {
     const n = norm(w);
-    if (w.length < 2 || COMMON.has(w) || excludeSet.has(n)) return;
+    // 1文字の言葉は、漢字1字でふつうの会話によく出る字でなければ拾う（脳、犬、像、山 など）
+    if (w.length < 2 && !(settings.aiLevel !== "few" && /^[一-鿿]$/.test(w) && !ONE_CHAR_COMMON.includes(w))) return;
+    if (COMMON.has(w) || excludeSet.has(n)) return;
     if (NG_WORDS.some((x) => w.includes(x))) return;
     if (!found.some((f) => norm(f) === n)) found.push(w);
   };
@@ -503,13 +539,16 @@ function aiHear(text) {
       const w = run.map((t) => t.surface_form).join("");
       const proper = run.some((t) => t.pos_detail_1 === "固有名詞" && t.pos_detail_2 !== "人名");
       const person = run.every((t) => t.pos_detail_2 === "人名");
-      // 固有名詞を含むもの、または漢字だけで3文字以上の言葉（失語症、作業療法 など）
-      if (!person && (proper || /^[一-鿿々]{3,}$/.test(w))) add(w);
+      if (person) { run = []; return; }
+      // 少なめ：固有名詞を含むもの、または漢字だけで3文字以上の言葉（失語症、作業療法 など）
+      // ふつう：それに加えて、ふつうの名詞（粘土、犬、脳、リハビリ など。ひらがなだけの言葉は除く）
+      const plain = settings.aiLevel !== "few" && run.some((t) => t.pos_detail_1 === "一般") && !/^[ぁ-ゖー]+$/.test(w);
+      if (proper || /^[一-鿿々]{3,}$/.test(w) || plain) add(w);
     }
     run = [];
   };
   for (const t of toks) {
-    const ok = t.pos === "名詞" && !["代名詞", "非自立", "数", "副詞可能", "接尾"].includes(t.pos_detail_1);
+    const ok = t.pos === "名詞" && !["代名詞", "非自立", "数", "副詞可能", "接尾", "形容動詞語幹", "ナイ形容詞語幹"].includes(t.pos_detail_1);
     const suffix = t.pos === "名詞" && t.pos_detail_1 === "接尾" && run.length;
     if (ok || suffix) run.push(t); else flush();
   }
@@ -537,7 +576,15 @@ async function findSecondScreen() {
   } catch (e) { return null; }
 }
 
-function displayOpen() { return !!disp && !disp.closed; }
+// スマートフォン（画面の幅が狭いとき）は、投影ウィンドウを別に開かず、この画面の中に写真と字幕を出す
+const isPhone = new URLSearchParams(location.search).has("phone") || matchMedia("(max-width: 760px)").matches;
+if (isPhone) {
+  document.body.classList.add("phone");
+  $("phoneView").src = "projection.html?embed=1";
+  $("phoneView").onload = () => setTimeout(sendSubStyle, 300);
+}
+
+function displayOpen() { return isPhone || (!!disp && !disp.closed); }
 
 async function onOpenDisplay() {
   if (displayOpen()) { disp.focus(); return status("投影ウィンドウはもう開いています（このまま使えます）。"); }
@@ -865,7 +912,7 @@ function renderListenBanner() {
   const el = $("listenBanner");
   let msg = "";
   if (!listening && stoppedByOtherTab) msg = "別のタブでこえ検索が動いているので、このタブは止めました。このタブは閉じてください";
-  else if (!listening) msg = everListened ? "聞き取りは止まっています ── 「聞き取り」ボタンかスペースキーで再開" : "「聞き取り」ボタン（またはスペースキー）を押すと、聞き取りを始めます";
+  else if (!listening) msg = everListened ? `聞き取りは止まっています ── 「聞き取り」ボタン${isPhone ? "" : "かスペースキー"}で再開` : `「聞き取り」ボタン${isPhone ? "" : "（またはスペースキー）"}を押すと、聞き取りを始めます`;
   else if (needsPermission) msg = "マイクの許可が必要です ── 許可してからスペースキー";
   else if (!running && Date.now() - lastKick > 4000) msg = "聞き取りをやり直しています…";
   el.textContent = msg;
@@ -948,6 +995,8 @@ $("logDownload").onclick = () => {
   if (p) downloadText(p.name, p.text); else status("まだ記録がありません");
 };
 $("subPos").value = settings.subPos;
+$("aiLevel").value = settings.aiLevel;
+$("aiLevel").onchange = () => { settings.aiLevel = $("aiLevel").value; saveSettings(); };
 $("subPos").onchange = () => { settings.subPos = $("subPos").value; saveSettings(); sendSubStyle(); };
 $("save").onclick = () => {
   settings.words = $("words").value;
@@ -965,7 +1014,8 @@ kuromoji.builder({ dicPath: "lib/dict/" }).build((err, t) => {
   if (err) return status("辞書の読み込みに失敗しました: " + err, { error: true, ms: 0 });
   tokenizer = t;
   buildLists();
-  status(`準備ができました（単語リスト ${entries.length} 語）。O キーで投影ウィンドウを開き、「聞き取り」ボタン（またはスペースキー）で聞き取りを始めてください。`, { ms: 0 });
+  status(isPhone ? `準備ができました（単語リスト ${entries.length} 語）。「聞き取り」ボタンで始めてください。`
+    : `準備ができました（単語リスト ${entries.length} 語）。O キーで投影ウィンドウを開き、「聞き取り」ボタン（またはスペースキー）で聞き取りを始めてください。`, { ms: 0 });
   // ブラウザ版は、開いたときは聞き取りオフ。「聞き取り」ボタンかスペースキーで始める
   renderListenBanner();
 });

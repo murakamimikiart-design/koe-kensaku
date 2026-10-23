@@ -33,6 +33,14 @@
   ruby rt { font-size: 0.45em; font-weight: 500; color: #f3d9a4; }
   .line.old ruby rt { color: #a89a7c; }
   #measure { position: absolute; visibility: hidden; left: 0; top: 0; }
+  /* スマートフォンの画面の中にはめ込むとき（embed=1） */
+  body.embed #fsBtn { display: none; }
+  body.embed #standby h1 { font-size: 7vh; }
+  body.embed #standby p { font-size: 15px; padding: 0 16px; }
+  body.embed #bar { font-size: calc(19px * var(--scale)); padding: 8px 14px; }
+  body.embed figcaption { font-size: 11px; }
+  body.embed #word { font-size: 22px; }
+  body.embed #grid { gap: 6px; padding: 8px; }
 </style>
 </head>
 <body>
@@ -52,6 +60,7 @@
 //   final / interim : 字幕の文字 [[文字, ルビ], ...]
 //   style : { scale, pos }   clear : 字幕を消す
 const ch = new BroadcastChannel("koe-web");
+if (new URLSearchParams(location.search).has("embed")) document.body.classList.add("embed");
 const stage = document.getElementById("stage");
 const $ = (id) => document.getElementById(id);
 
@@ -69,26 +78,39 @@ async function wikiJson(params) {
   const r = await fetch(WIKI + new URLSearchParams(params));
   return r.json();
 }
-// 検索に合う記事の「代表の写真」を集める。少なければ、いちばん合う記事の中の写真も足す
+// 受講者の方がつらくなりそうな写真（病気・けが・事故・戦争など）の記事は、写真に使わない。
+// ただし、話している言葉そのものにその字が入っているとき（「失語症」など）は外さない
+const NG_TITLE = ["梗塞", "卒中", "出血", "腫瘍", "癌", "がん", "病", "症候群", "障害", "損傷", "外傷", "骨折", "震盪", "挫傷", "麻痺", "発作", "感染", "手術", "死", "遺体", "解剖",
+  "事故", "事件", "戦争", "空襲", "原爆", "爆撃", "災害", "地震", "震災", "津波", "火災", "殺", "虐", "暴力", "テロ"];
+const okTitle = (title, q) => !NG_TITLE.some((w) => title.includes(w) && !q.includes(w));
+
+// 記事の中の写真（写真らしい jpg/png だけ）
+async function articleImages(title) {
+  const m = await wikiJson({ action: "query", titles: title, generator: "images", gimlimit: 30,
+    prop: "imageinfo", iiprop: "url|size", iiurlwidth: 1200 });
+  return Object.values(m.query?.pages || {})
+    .map((f) => f.imageinfo?.[0])
+    .filter((i) => i && /\.(jpe?g|png)$/i.test(i.url) && i.width >= 300 && i.height >= 200)
+    .map((i) => ({ src: i.thumburl, cap: title }));
+}
+
+// 言葉そのものの記事（「脳」なら「脳」）を先に、そのあと検索に合う記事の「代表の写真」を並べる
 async function wikiImages(q, max = 6) {
-  const d = await wikiJson({ action: "query", generator: "search", gsrsearch: q, gsrlimit: 10,
-    prop: "pageimages", piprop: "thumbnail", pithumbsize: 1200, pilimit: 10 });
-  const pages = Object.values(d.query?.pages || {}).sort((a, b) => a.index - b.index);
+  const d = await wikiJson({ action: "query", generator: "search", gsrsearch: q, gsrlimit: 12,
+    prop: "pageimages", piprop: "thumbnail", pithumbsize: 1200, pilimit: 12, redirects: 1 });
+  let pages = Object.values(d.query?.pages || {}).sort((a, b) => a.index - b.index).filter((p) => okTitle(p.title, q));
+  const exact = pages.find((p) => norm(p.title) === norm(q));
+  if (exact) pages = [exact, ...pages.filter((p) => p !== exact)];
   const out = [];
-  for (const p of pages) if (p.thumbnail && out.length < max) out.push({ src: p.thumbnail.source, cap: p.title });
-  if (out.length < 4 && pages[0]) {
-    const m = await wikiJson({ action: "query", titles: pages[0].title, generator: "images", gimlimit: 30,
-      prop: "imageinfo", iiprop: "url|size", iiurlwidth: 1200 });
-    const files = Object.values(m.query?.pages || {})
-      .map((f) => f.imageinfo?.[0])
-      .filter((i) => i && /\.(jpe?g|png)$/i.test(i.url) && i.width >= 300 && i.height >= 200);
-    for (const i of files) {
-      if (out.length >= max) break;
-      if (!out.some((o) => o.src === i.thumburl)) out.push({ src: i.thumburl, cap: pages[0].title });
-    }
-  }
+  const push = (im) => { if (out.length < max && !out.some((o) => o.src === im.src)) out.push(im); };
+  if (exact?.thumbnail) push({ src: exact.thumbnail.source, cap: exact.title });
+  // 言葉そのものの記事があれば、その記事の写真をもう少し足す
+  if (exact) { try { (await articleImages(exact.title)).slice(0, 3).forEach(push); } catch (e) {} }
+  for (const p of pages) if (p.thumbnail) push({ src: p.thumbnail.source, cap: p.title });
+  if (out.length < 4 && pages[0] && pages[0] !== exact) { try { (await articleImages(pages[0].title)).forEach(push); } catch (e) {} }
   return out;
 }
+const norm = (t) => t.normalize("NFKC").replace(/[\s・･]/g, "").toLowerCase();
 
 let showSeq = 0;
 async function show(m) {
