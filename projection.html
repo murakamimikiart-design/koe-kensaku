@@ -82,14 +82,38 @@ document.addEventListener("keydown", (e) => { if (e.key === "f" || e.key === "F"
 
 // ---------- Wikipedia の画像 ----------
 const WIKI = "https://ja.wikipedia.org/w/api.php?format=json&origin=*&";
-async function wikiJson(params) {
-  const r = await fetch(WIKI + new URLSearchParams(params));
-  return r.json();
+// Wikipedia は短い時間にたくさん問い合わせると、しばらく断ってくる。そのときは少し待って1回だけやり直す
+async function apiJson(base, params) {
+  for (let i = 0; ; i++) {
+    try {
+      const r = await fetch(base + new URLSearchParams(params));
+      if (r.ok) return r.json();
+      if (i) throw new Error("HTTP " + r.status);
+    } catch (e) { if (i) throw e; }
+    await new Promise((res) => setTimeout(res, 2000));
+  }
+}
+const wikiJson = (params) => apiJson(WIKI, params);
+
+// 気持ちや動きの言葉（寂しい、迎える など）は Wikipedia の記事が少ないので、
+// Wikimedia Commons の写真の説明から探す（思いがけない写真が出やすい）
+const COMMONS = "https://commons.wikimedia.org/w/api.php?format=json&origin=*&";
+async function commonsImages(q) {
+  const d = await apiJson(COMMONS, { action: "query", generator: "search", gsrsearch: q, gsrnamespace: 6, gsrlimit: 15,
+    prop: "imageinfo", iiprop: "url|size", iiurlwidth: 1200 });
+  return Object.values(d.query?.pages || {}).sort((a, b) => a.index - b.index)
+    .map((p) => ({ p, i: p.imageinfo?.[0] }))
+    .filter(({ p, i }) => i && /\.(jpe?g|png)$/i.test(new URL(i.url).pathname) && i.width >= 300 && i.height >= 200 &&
+      okTitle(p.title, q) && !NG_FILE.test(p.title) && !NG_COMMONS.test(p.title))
+    .map(({ p, i }) => ({ src: i.thumburl, cap: p.title.replace(/^File:/, "").replace(/\.[^.]+$/, "").replace(/\s*\(\d+\)$/, "").slice(0, 40),
+      href: i.descriptionurl }));
 }
 // 受講者の方がつらくなりそうな写真（病気・けが・事故・戦争など）の記事は、写真に使わない。
 // ただし、話している言葉そのものにその字が入っているとき（「失語症」など）は外さない
 const NG_TITLE = ["梗塞", "卒中", "出血", "腫瘍", "癌", "がん", "病", "症候群", "障害", "損傷", "外傷", "骨折", "震盪", "挫傷", "麻痺", "発作", "感染", "手術", "死", "遺体", "解剖",
-  "断層撮影", "磁気共鳴", "MRI", "CT", "画像診断", "事故", "事件", "戦争", "空襲", "原爆", "爆撃", "災害", "地震", "震災", "津波", "火災", "殺", "虐", "暴力", "テロ"];
+  "断層撮影", "磁気共鳴", "MRI", "CT", "画像診断", "事故", "事件", "戦争", "空襲", "原爆", "爆撃", "災害", "地震", "震災", "津波", "火災", "殺", "虐", "暴力", "テロ", "在日特権", "ヘイト", "差別"];
+// Commons の写真の説明には古い記録写真やデモの写真も多いので、兵隊・戦地・抗議のものは外す
+const NG_COMMONS = /兵|軍|戦|爆|葬|墓|遺骨|慰霊|被災|空襲|焼け跡|デモ|抗議|placard|protest|demonstrat|soldier|military|(?<![a-z])(rally|hate|army)(?![a-z])/i;
 // 記事の中の写真のファイル名（英語が多い）も同じように見る
 // 「engraving」「Edward」などを外さないよう、短い語は単語として見る
 const NG_FILE = /death|(?<![a-z])(dead|grave|war|wars|ct|mri)(?![a-z])|corpse|in_a_jar|dissect|cadaver|funeral|injur|wound|accident|disaster|bomb|surgery|autopsy|tomograph|stuffed|specimen|剥製|葬|墓/i;
@@ -143,6 +167,8 @@ async function wikiImages(q, max = 6) {
   if (exact && out.length === 0) { try { (await linkedImages(exact.title)).filter((im) => okTitle(im.cap, q)).forEach(push); } catch (e) {} }
   for (const p of pages) if (p.thumbnail) push({ src: p.thumbnail.source, cap: p.title });
   // 何も見つからず、ほかの言葉もあるときは、2つ目からの言葉で探し直す（「セラピーパテ リハビリ」→「リハビリ」）
+  // Wikipedia で写真が少ないときは、Commons の写真を足す
+  if (out.length < 4) { try { (await commonsImages(q)).forEach(push); } catch (e) {} }
   const rest = q.trim().split(/[\s　]+/).slice(1).join(" ");
   if (!out.length && rest) return wikiImages(rest, max);
   return out;
@@ -201,11 +227,11 @@ async function show(m) {
   grid.style.gridTemplateRows = `repeat(${Math.ceil(n / cols)}, 1fr)`;
   for (const im of imgs) {
     const f = document.createElement("figure");
-    const article = WIKI_PAGE + encodeURIComponent(im.cap);
+    const article = im.href || WIKI_PAGE + encodeURIComponent(im.cap);
     const pic = link(article, "pic");
     const img = document.createElement("img");
     img.src = im.src; img.alt = im.cap;
-    pic.title = `「${im.cap}」の記事を開く`;
+    pic.title = im.href ? "この写真のページを開く" : `「${im.cap}」の記事を開く`;
     pic.appendChild(img);
     const c = document.createElement("figcaption");
     const name = link(article);

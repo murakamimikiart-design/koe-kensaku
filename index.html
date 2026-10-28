@@ -193,6 +193,7 @@
         事故・戦争・病気など、つらい写真が出そうな言葉は出しません。</p>
         <label>拾う言葉の多さ
           <select id="aiLevel" style="width:100%;font-size:14px;padding:6px;margin-top:4px;border:1px solid var(--line);border-radius:8px">
+            <option value="wide">ひろげる（気持ち・動き・抽象的な言葉も拾う：約束、光、寂しい、迎える など）</option>
             <option value="normal">ふつう（粘土・犬・脳 などのふつうの名詞も拾う）</option>
             <option value="few">少なめ（地名・作品名などと、漢字3文字以上の言葉だけ）</option>
           </select>
@@ -247,7 +248,7 @@ const DEFAULTS = {
   ].join("\n"),
   subScale: 1,       // 字幕の文字の大きさ（1 = ふつう）
   aiMode: true,      // 会話モード（簡易版）。ブラウザ版でははじめからオン
-  aiLevel: "normal", // 会話モードで拾う言葉の多さ（normal：ふつう / few：少なめ）
+  aiLevel: "wide",   // 会話モードで拾う言葉の多さ（wide：ひろげる / normal：ふつう / few：少なめ）
   subPos: "bottom",  // 字幕の位置（top / bottom）
   exclude: "",
   suffix: "",
@@ -261,6 +262,8 @@ let settings = { ...DEFAULTS };
 try { Object.assign(settings, JSON.parse(localStorage.getItem(STORE) || "{}")); } catch (e) {}
 // 前の決まり（2分）のまま保存されていたら、30秒に直す（1回だけ）
 if (!settings.v3) { if (settings.cooldown === 120 || settings.cooldown === 30) settings.cooldown = 40; settings.v2 = settings.v3 = true; try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
+// 「ひろげる」ができる前の「ふつう」のままなら、ひろげるにする（1回だけ）
+if (!settings.v4) { if (settings.aiLevel === "normal") settings.aiLevel = "wide"; settings.v4 = true; try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
 function saveSettings() { try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
 
 const $ = (id) => document.getElementById(id);
@@ -523,15 +526,24 @@ const COMMON = new Set(("日本 今日 明日 昨日 本日 自分 皆さん み
   "お話 話 皆様 今度 次回 毎日 毎回 先日 当日 時代 年代 以前 以後 途中 最中 一部 全体 程度 具合 様子 存在 対象 状況 環境 情報 " +
   "ワークショップ セッション テーマ ポイント イメージ タイプ ケース パターン レベル ステップ").split(" "));
 
+// ひろげる：気持ち・動き・抽象的な言葉も拾う。それでも拾わない、話のつなぎだけの言葉
+const WIDE_SKIP = new Set(("日本 今日 明日 昨日 本日 自分 皆さん みなさん 皆様 場合 今回 最初 最後 一番 一緒 以上 以下 必要 可能 関係 " +
+  "こと もの ところ とき ため よう そう ほう 感じ 意味 理由 部分 問題 内容 全部 全員 普通 本当 大丈夫 自体 説明 質問 名前 " +
+  "お話 話 今度 次回 先日 当日 途中 一部 全体 程度 具合 様子 ワークショップ セッション テーマ ポイント タイプ ケース レベル ステップ").split(" "));
+// 動きや気持ちの言葉のうち、ありふれていて写真にならないもの
+const COMMON_VERBS = new Set("する ある いる なる 言う 思う 行く 来る くる できる 見る 聞く 分かる わかる 使う 持つ やる 出る 入る 考える 知る 頂く いただく 下さる くださる 書く 作れる 見える 聞こえる 始める 終わる 続ける おる いう".split(" "));
+const COMMON_ADJS = new Set("ない いい よい 良い 多い 少ない すごい 凄い 大きい 小さい 早い 遅い 近い 遠い 新しい 古い 高い 低い 長い 短い 難しい 易しい".split(" "));
+
 function aiHear(text) {
   if (!settings.aiMode || !tokenizer) return;
+  const wide = settings.aiLevel === "wide";
   const toks = tokenizer.tokenize(text);
   const found = [];
   const add = (w) => {
     const n = norm(w);
     // 1文字の言葉は、漢字1字でふつうの会話によく出る字でなければ拾う（脳、犬、像、山 など）
     if (w.length < 2 && !(settings.aiLevel !== "few" && /^[一-鿿]$/.test(w) && !ONE_CHAR_COMMON.includes(w))) return;
-    if (COMMON.has(w) || excludeSet.has(n)) return;
+    if ((wide ? WIDE_SKIP : COMMON).has(w) || excludeSet.has(n)) return;
     if (NG_WORDS.some((x) => w.includes(x))) return;
     if (!found.some((f) => norm(f) === n)) found.push(w);
   };
@@ -545,14 +557,21 @@ function aiHear(text) {
       // 少なめ：固有名詞を含むもの、または漢字だけで3文字以上の言葉（失語症、作業療法 など）
       // ふつう：それに加えて、ふつうの名詞（粘土、犬、脳、リハビリ など。ひらがなだけの言葉は除く）
       const plain = settings.aiLevel !== "few" && run.some((t) => t.pos_detail_1 === "一般") && !/^[ぁ-ゖー]+$/.test(w);
-      if (proper || /^[一-鿿々]{3,}$/.test(w) || plain) add(w);
+      // ひろげる：名詞はみな拾う（約束、記憶、安心、居場所 など。ひらがなだけの言葉は4文字以上：ぬくもり）
+      if (proper || /^[一-鿿々]{3,}$/.test(w) || plain || (wide && (!/^[ぁ-ゖー]+$/.test(w) || w.length >= 4))) add(w);
     }
     run = [];
   };
+  const skipPos = ["代名詞", "非自立", "数", "副詞可能", "接尾", "ナイ形容詞語幹", ...(wide ? [] : ["形容動詞語幹"])];
   for (const t of toks) {
-    const ok = t.pos === "名詞" && !["代名詞", "非自立", "数", "副詞可能", "接尾", "形容動詞語幹", "ナイ形容詞語幹"].includes(t.pos_detail_1);
+    const ok = t.pos === "名詞" && !skipPos.includes(t.pos_detail_1);
     const suffix = t.pos === "名詞" && t.pos_detail_1 === "接尾" && run.length;
-    if (ok || suffix) run.push(t); else flush();
+    if (ok || suffix) { run.push(t); continue; }
+    flush();
+    // ひろげる：動き（迎える、許す、隠れる）と気持ち（寂しい、懐かしい）は、もとの形で探す
+    const base = t.basic_form && t.basic_form !== "*" ? t.basic_form : t.surface_form;
+    if (wide && t.pos_detail_1 === "自立" && base.length >= 2 &&
+        ((t.pos === "動詞" && !COMMON_VERBS.has(base)) || (t.pos === "形容詞" && !COMMON_ADJS.has(base)))) add(base);
   }
   flush();
   for (const w of found) request({ query: w, label: w, kind: "ai" });
