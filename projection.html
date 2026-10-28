@@ -7,7 +7,7 @@
 <style>
   :root { --paper: #f6f3ee; --ink: #2b2620; --muted: #8a8375; --scale: 1; }
   html, body { margin: 0; height: 100%; overflow: hidden; background: var(--paper); color: var(--ink);
-    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif; }
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "PingFang SC", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
   #stage { position: absolute; inset: 0; display: flex; flex-direction: column; }
   #grid { flex: 1; min-height: 0; display: grid; gap: 1.6vh; padding: 2.4vh 2.4vw; }
   figure { margin: 0; min-height: 0; display: flex; flex-direction: column; background: #fff; border-radius: 1vh; overflow: hidden; }
@@ -54,23 +54,39 @@
 <body>
 <div id="stage">
   <div id="standby">
-    <h1>こえ検索</h1>
-    <p>このウィンドウに、話に出てきた言葉の写真（Wikipedia）が表示されます。<br>
-    話した言葉は、ルビ付きの字幕で表示されます。</p>
-    <button id="fsBtn">クリックで全画面にする（F キー）</button>
+    <h1 data-i18n="appName">こえ検索</h1>
+    <p data-i18n="standby"></p>
+    <button id="fsBtn" data-i18n="fsBtn"></button>
   </div>
 </div>
 <div id="bar" class="bottom"><div class="line" id="measure"></div></div>
+<script src="i18n.js?v=1"></script>
 <script>
 // 操作画面（index.html）から BroadcastChannel「koe-web」で指示が届く。
 //   show  : { query, label, url? } → Wikipedia の画像を並べる（url があればそのページ）
 //   final / interim : 字幕の文字 [[文字, ルビ], ...]
-//   style : { scale, pos }   clear : 字幕を消す
+//   style : { scale, pos, lang }   clear : 字幕を消す
 const ch = new BroadcastChannel("koe-web");
 const embed = new URLSearchParams(location.search).has("embed");
 if (embed) document.body.classList.add("embed");
 const stage = document.getElementById("stage");
 const $ = (id) => document.getElementById(id);
+
+// 言語（操作画面の設定と同じ。操作画面で変えると style で届く）
+let lang = "ja";
+try { lang = JSON.parse(localStorage.getItem("koe-kensaku-web-settings") || "{}").lang || "ja"; } catch (e) {}
+if (!LANGS[lang]) lang = "ja";
+const T = (key, vars) => tr(lang, key, vars);
+const isLatin = () => lang === "en" || lang === "it";
+let WIKI, WIKI_PAGE;
+function setLang(l) {
+  lang = LANGS[l] ? l : "ja";
+  WIKI = `https://${LANGS[lang].wiki}.wikipedia.org/w/api.php?format=json&origin=*&`;
+  WIKI_PAGE = `https://${LANGS[lang].wiki}.wikipedia.org/wiki/`;
+  applyI18n(lang);
+  document.title = T("appName");
+}
+setLang(lang);
 
 // ---------- 全画面 ----------
 // 投影ウィンドウはページが切り替わらないので、一度全画面にすれば講座中ずっとそのまま
@@ -81,7 +97,6 @@ $("fsBtn").onclick = toggleFullscreen;
 document.addEventListener("keydown", (e) => { if (e.key === "f" || e.key === "F") toggleFullscreen(); });
 
 // ---------- Wikipedia の画像 ----------
-const WIKI = "https://ja.wikipedia.org/w/api.php?format=json&origin=*&";
 // Wikipedia は短い時間にたくさん問い合わせると、しばらく断ってくる。そのときは少し待って1回だけやり直す
 async function apiJson(base, params) {
   for (let i = 0; ; i++) {
@@ -113,11 +128,14 @@ async function commonsImages(q) {
 const NG_TITLE = ["梗塞", "卒中", "出血", "腫瘍", "癌", "がん", "病", "症候群", "障害", "損傷", "外傷", "骨折", "震盪", "挫傷", "麻痺", "発作", "感染", "手術", "死", "遺体", "解剖",
   "断層撮影", "磁気共鳴", "MRI", "CT", "画像診断", "事故", "事件", "戦争", "空襲", "原爆", "爆撃", "災害", "地震", "震災", "津波", "火災", "殺", "虐", "暴力", "テロ", "在日特権", "ヘイト", "差別"];
 // Commons の写真の説明には古い記録写真やデモの写真も多いので、兵隊・戦地・抗議のものは外す
-const NG_COMMONS = /兵|軍|戦|爆|葬|墓|遺骨|慰霊|被災|空襲|焼け跡|デモ|抗議|placard|protest|demonstrat|soldier|military|(?<![a-z])(rally|hate|army)(?![a-z])/i;
+const NG_COMMONS = /兵|軍|军|戦|戰|战|爆|葬|墓|遺骨|慰霊|被災|空襲|焼け跡|デモ|抗議|抗议|군인|전쟁|시위|placard|protest|demonstrat|soldier|military|soldat|militar|manifestazion|guerra|(?<![a-z])(rally|hate|army)(?![a-z])/i;
 // 記事の中の写真のファイル名（英語が多い）も同じように見る
 // 「engraving」「Edward」などを外さないよう、短い語は単語として見る
 const NG_FILE = /death|(?<![a-z])(dead|grave|war|wars|ct|mri)(?![a-z])|corpse|in_a_jar|dissect|cadaver|funeral|injur|wound|accident|disaster|bomb|surgery|autopsy|tomograph|stuffed|specimen|剥製|葬|墓/i;
-const okTitle = (title, q) => !NG_TITLE.some((w) => title.includes(w) && !q.includes(w));
+// 日本語の一覧に加えて、いまの言語の一覧も見る（英語・イタリア語は単語の頭で比べる。「war」で「Warhol」を外さないよう短い語は単語ごと）
+const ngLatin = (title, w) => new RegExp(w.length >= 5 ? `(?<!\\p{L})${w}` : `(?<!\\p{L})${w}(?!\\p{L})`, "iu").test(title);
+const okTitle = (title, q) => !NG_TITLE.some((w) => title.includes(w) && !q.includes(w)) &&
+  !(NG_LANG[lang] || []).some((w) => (isLatin() ? ngLatin(title, w) : title.includes(w)) && !q.toLowerCase().includes(w));
 
 // 記事の中の写真（写真らしい jpg/png だけ。アイコンや旗の絵は外す）
 // URL の後ろに「?utm_source=…」が付くので、拡張子はパスの部分で見る
@@ -143,8 +161,9 @@ async function linkedImages(title) {
 
 // 言葉そのものの記事（「脳」なら「脳」）を先に、そのあと検索に合う記事の「代表の写真」を並べる
 // 単語リストの「=」の後ろが「安藤照 彫刻家 ハチ公」のように何語かあるときは、最初の言葉を記事の名前として探す
+// （英語・イタリア語は言葉の間に空白があるので、分けずに全体を記事の名前として探す）
 async function wikiImages(q, max = 6) {
-  const head = q.trim().split(/[\s　]+/)[0];
+  const head = isLatin() ? q.trim() : q.trim().split(/[\s　]+/)[0];
   const [d, t] = await Promise.all([
     wikiJson({ action: "query", generator: "search", gsrsearch: q, gsrlimit: 12,
       prop: "pageimages", piprop: "thumbnail", pithumbsize: 1200, pilimit: 12, redirects: 1 }),
@@ -169,7 +188,7 @@ async function wikiImages(q, max = 6) {
   // 何も見つからず、ほかの言葉もあるときは、2つ目からの言葉で探し直す（「セラピーパテ リハビリ」→「リハビリ」）
   // Wikipedia で写真が少ないときは、Commons の写真を足す
   if (out.length < 4) { try { (await commonsImages(q)).forEach(push); } catch (e) {} }
-  const rest = q.trim().split(/[\s　]+/).slice(1).join(" ");
+  const rest = isLatin() ? "" : q.trim().split(/[\s　]+/).slice(1).join(" ");
   if (!out.length && rest) return wikiImages(rest, max);
   return out;
 }
@@ -196,7 +215,6 @@ async function credits(imgs) {
 }
 const norm = (t) => t.normalize("NFKC").replace(/[\s・･]/g, "").toLowerCase();
 
-const WIKI_PAGE = "https://ja.wikipedia.org/wiki/";
 function link(href, cls) {
   const a = document.createElement("a");
   a.href = href; a.target = "_blank"; a.rel = "noopener";
@@ -217,7 +235,7 @@ async function show(m) {
   if (seq !== showSeq) return;   // 待っている間に次の言葉が来た
   if (!imgs.length) {
     stage.innerHTML = `<div id="msg"></div><div id="word"></div>`;
-    $("msg").textContent = `「${m.label}」の写真は Wikipedia に見つかりませんでした`;
+    $("msg").textContent = T("notFound", { w: m.label });
     return;
   }
   const n = imgs.length, cols = n <= 1 ? 1 : n <= 4 ? 2 : 3;
@@ -231,21 +249,21 @@ async function show(m) {
     const pic = link(article, "pic");
     const img = document.createElement("img");
     img.src = im.src; img.alt = im.cap;
-    pic.title = im.href ? "この写真のページを開く" : `「${im.cap}」の記事を開く`;
+    pic.title = im.href ? T("openPhotoPage") : T("openArticle", { w: im.cap });
     pic.appendChild(img);
     const c = document.createElement("figcaption");
     const name = link(article);
     name.textContent = im.cap;
     // 作者の行は、写真そのもののページ（作者・ライセンスがくわしく載っている）へ
     const lic = link(WIKI_PAGE + encodeURIComponent("File:" + fileName(im.src)), "lic");
-    lic.textContent = "写真：" + (im.lic || "作者・ライセンスは Wikimedia Commons の各ページ");
-    lic.title = "この写真の作者・ライセンスのページを開く";
+    lic.textContent = T("photoBy") + (im.lic || T("licFallback"));
+    lic.title = T("openLicPage");
     c.append(name, lic);
     f.append(pic, c);
     grid.appendChild(f);
   }
   $("word").textContent = m.label;
-  $("credit").textContent = "写真：Wikipedia / Wikimedia Commons より（各写真の下に 作者 / ライセンス）";
+  $("credit").textContent = T("credit");
 }
 
 // ---------- 字幕（ルビ付き） ----------
@@ -322,6 +340,7 @@ ch.onmessage = (e) => {
   else if (m.type === "interim") interim = m.tokens || [];
   else if (m.type === "clear") { lines = []; interim = []; }
   else if (m.type === "style") {
+    if (m.lang && m.lang !== lang) setLang(m.lang);
     document.documentElement.style.setProperty("--scale", m.scale || 1);
     bar.classList.toggle("top", m.pos === "top");
     bar.classList.toggle("bottom", m.pos !== "top");

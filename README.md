@@ -7,6 +7,19 @@
 **https://murakamimikiart-design.github.io/koe-kensaku/** を Google Chrome で開くだけで使えます。
 インストールも、サーバーも、API キーもいりません。
 
+## 言語（日本語・中文・한국어・English・Italiano）
+
+操作画面の右上で言語を選べます。選んだ言語で、次のものがまとめて切り替わります。
+
+- 聞き取る言葉（その言語で話した声を文字にします）
+- 画面の文字（ボタン・説明・投影ウィンドウ）
+- 写真を探す Wikipedia の言語（中文 → 中国語版、English → 英語版 など）
+- 会話モードで拾う言葉
+
+ルビと人物名の候補は、日本語のときだけです。日本語以外の会話モードは、辞書ではなく「よく使う言葉の一覧」で拾うので、日本語より大まかです。はじめはブラウザの言語に合わせます。
+
+Choose the language at the top right (日本語 / 中文 / 한국어 / English / Italiano). Speech recognition, screen text, the Wikipedia language and conversation mode all follow it.
+
 ## スマートフォンで使う
 
 スマートフォンで開くと、写真と字幕をその画面の中に出す形になります（投影ウィンドウは開きません）。字幕は4行で出し、「画像を固定」ボタンはありません。

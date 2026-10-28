@@ -19,7 +19,7 @@
   body {
     background: var(--paper);
     color: var(--ink);
-    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", sans-serif;
+    font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "PingFang SC", "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
     display: flex; flex-direction: column;
   }
   header {
@@ -44,6 +44,9 @@
     border-radius: 999px; width: 240px; outline: none; background: #fff;
   }
   #manual:focus { border-color: var(--thread); }
+  #lang { font-size: 14px; padding: 7px 10px; border: 1.5px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); }
+  /* 人物名の候補は日本語のときだけ */
+  body:not(.lang-ja) #pNames { display: none; }
 
   /* ---------- スマートフォン表示（画面が1つなので、写真と字幕をこの画面の中に出す） ---------- */
   #phoneView { display: none; }
@@ -52,7 +55,8 @@
   body.phone .pill { font-size: 14px; padding: 8px 12px; }
   body.phone .pill kbd, body.phone #pDisplay, body.phone #pHold, body.phone .grow { display: none; }
   body.phone #pListen { order: -1; font-size: 18px; font-weight: 700; padding: 12px 22px; flex-basis: 100%; text-align: center; }
-  body.phone #manual { width: 100%; font-size: 16px; }
+  body.phone #manual { flex: 1; width: auto; font-size: 16px; }
+  body.phone #lang { font-size: 16px; }
   body.phone #listenBanner { font-size: 15px; padding: 8px; }
   body.phone { height: auto; min-height: 100%; }
   body.phone main { display: flex; flex-direction: column; flex: none; }
@@ -133,119 +137,91 @@
 </head>
 <body>
 <header>
-  <h1>こえ検索 <small style="font-size:12px;color:var(--muted);font-weight:400">ブラウザ版</small></h1>
-  <span class="pill rec" id="pListen" title="スペースキー">聞き取り<kbd>Space</kbd></span>
-  <span class="pill" id="pDisplay" title="Oキー">投影ウィンドウを開く<kbd>O</kbd></span>
-  <span class="pill on" id="pNames" title="Nキー：人物名らしい言葉を履歴に候補として並べる（自動では投影しません）">人物名の候補<kbd>N</kbd></span>
-  <span class="pill on" id="pWords" title="Wキー">単語リストで検索<kbd>W</kbd></span>
-  <span class="pill" id="pHold" title="Hキー">画像を固定<kbd>H</kbd></span>
-  <span class="pill" id="pAI" title="Kキー：話に出てきた地名・作品名などの固有名詞や、まとまった言葉を、自動で投影する">会話モード<kbd>K</kbd></span>
+  <h1><span data-i18n="appName">こえ検索</span> <small style="font-size:12px;color:var(--muted);font-weight:400" data-i18n="edition">ブラウザ版</small></h1>
+  <span class="pill rec" id="pListen" data-i18n-title="pListenTip"><span class="pl"></span><kbd>Space</kbd></span>
+  <span class="pill" id="pDisplay" data-i18n-title="pDisplayTip"><span class="pl"></span><kbd>O</kbd></span>
+  <span class="pill on" id="pNames" data-i18n-title="pNamesTip"><span data-i18n="pNames"></span><kbd>N</kbd></span>
+  <span class="pill on" id="pWords" data-i18n-title="pWordsTip"><span data-i18n="pWords"></span><kbd>W</kbd></span>
+  <span class="pill" id="pHold" data-i18n-title="pHoldTip"><span data-i18n="pHold"></span><kbd>H</kbd></span>
+  <span class="pill" id="pAI" data-i18n-title="pAITip"><span data-i18n="pAI"></span><kbd>K</kbd></span>
   <span class="grow"></span>
-  <input id="manual" type="text" placeholder="手入力で検索（/ キー）" autocomplete="off">
+  <input id="manual" type="text" data-i18n-ph="manualPh" autocomplete="off">
+  <select id="lang" data-i18n-title="langLabel" aria-label="Language"></select>
 </header>
 
 <div id="listenBanner" hidden></div>
 <main>
-  <iframe id="phoneView" title="写真と字幕"></iframe>
+  <iframe id="phoneView" data-i18n-title="phoneView"></iframe>
   <div id="transcript">
-    <p class="hint">
-      ① <b>O</b> キーで投影ウィンドウを開き、2画面目（プロジェクター）に移します。投影ウィンドウの中をクリックすると全画面になります。<br>
-      ② 上の「<b>聞き取り</b>」ボタン（または<b>スペース</b>キー）で聞き取りを始めます。始めたあとは、止めるまでずっと続きます（途中で止まっても自動でやり直します）。<br>
-      話した言葉の中に「単語リストの言葉」が出てくると、投影ウィンドウに Wikipedia の写真が出ます。<br>
-      字幕（ルビ付き）は、投影ウィンドウの上か下に重なります。
-    </p>
+    <p class="hint" data-i18n="hint"></p>
   </div>
   <aside>
     <div class="now">
-      <div class="label">いま投影している言葉</div>
+      <div class="label" data-i18n="nowLabel"></div>
       <div id="nowWord">—</div>
       <div class="holdTrack"><div id="holdBar"></div></div>
       <div id="queueInfo"></div>
     </div>
-    <div class="label" style="padding: 10px 18px 0">これまでの検索（数字キーでもう一度表示）</div>
+    <div class="label" style="padding: 10px 18px 0" data-i18n="histLabel"></div>
     <ul id="history"></ul>
   </aside>
 </main>
 
-<div id="status">準備中…</div>
+<div id="status" data-i18n="preparing"></div>
 
 <details id="settingsBox">
-  <summary>設定（単語リスト・除外リスト・キー一覧）</summary>
+  <summary data-i18n="settingsSummary"></summary>
   <div class="settings">
     <div>
-      <h3>単語リスト</h3>
+      <h3 data-i18n="wordsH"></h3>
       <textarea id="words" spellcheck="false"></textarea>
-      <p class="note">1行に1語。言い方がいくつかあるときは「|」で区切ります。<br>
-      「=」の後ろに書くと、その言葉で検索します。例）<code>ゴッホ|ファン・ゴッホ = ゴッホ 自画像</code><br>
-      <b>ウェブサイトを出す</b>：「=」の後ろに https:// から始まるアドレスを書きます（サイトによっては表示を断られます）。<br>
-      単語リストに登録した人物名は、候補ではなく必ず投影されます。<br>
-      ひらがな・カタカナの違いや、漢字と読みの違いはある程度吸収します。</p>
+      <p class="note" data-i18n="wordsNote"></p>
     </div>
     <div>
-      <h3>候補・自動検索から外す言葉</h3>
+      <h3 data-i18n="excludeH"></h3>
       <textarea id="exclude" spellcheck="false"></textarea>
-      <p class="note">人物名の候補や会話モードで出してほしくない言葉を1行に1つ書きます。<br>
-      履歴の言葉を右クリックすると、ここに追加できます。</p>
+      <p class="note" data-i18n="excludeNote"></p>
       <div class="ai-box">
-        <h3>会話モード（簡易版・AI なし）</h3>
-        <p class="note" style="margin-top:0">話に出てきた名詞（粘土、犬、地名、作品名、「作業療法」のような言葉など）を辞書で見つけて、自動で投影します。
-        AI もインターネット上のサービスも使いません（写真の検索だけ Wikipedia を使います）。<br>
-        事故・戦争・病気など、つらい写真が出そうな言葉は出しません。</p>
-        <label>拾う言葉の多さ
+        <h3 data-i18n="aiH"></h3>
+        <p class="note" style="margin-top:0" data-i18n="aiNote"></p>
+        <label><span data-i18n="aiLevelLabel"></span>
           <select id="aiLevel" style="width:100%;font-size:14px;padding:6px;margin-top:4px;border:1px solid var(--line);border-radius:8px">
-            <option value="wide">ひろげる（気持ち・動き・抽象的な言葉も拾う：約束、光、寂しい、迎える など）</option>
-            <option value="normal">ふつう（粘土・犬・脳 などのふつうの名詞も拾う）</option>
-            <option value="few">少なめ（地名・作品名などと、漢字3文字以上の言葉だけ）</option>
+            <option value="wide" data-i18n="levelWide"></option>
+            <option value="normal" data-i18n="levelNormal"></option>
+            <option value="few" data-i18n="levelFew"></option>
           </select>
         </label>
       </div>
       <div class="ai-box">
-        <h3>文字起こしの記録</h3>
-        <p class="note" style="margin-top:0">聞き取りを止める（スペースキー）と、記録をテキストファイルとしてダウンロードします。</p>
-        <button class="small" id="logDownload">最後の記録をもう一度ダウンロード</button>
+        <h3 data-i18n="logH"></h3>
+        <p class="note" style="margin-top:0" data-i18n="logNote"></p>
+        <button class="small" id="logDownload" data-i18n="logBtn"></button>
       </div>
     </div>
     <div>
-      <label>字幕の位置
+      <label><span data-i18n="subPosLabel"></span>
         <select id="subPos" style="width:100%;font-size:14px;padding:6px;margin-top:4px;border:1px solid var(--line);border-radius:8px">
-          <option value="top">上</option><option value="bottom">下</option>
+          <option value="top" data-i18n="top"></option><option value="bottom" data-i18n="bottom"></option>
         </select>
       </label>
-      <label>1つの画像を最低何秒見せるか
+      <label><span data-i18n="minHoldLabel"></span>
         <input type="number" id="minHold" min="0" max="60" step="1">
       </label>
-      <label>同じ言葉を再検索しない秒数
+      <label><span data-i18n="cooldownLabel"></span>
         <input type="number" id="cooldown" min="0" max="3600" step="10">
       </label>
-      <button class="small" id="save">保存して反映</button>
-      <div class="keys" style="margin-top:14px">
-        <kbd>Space</kbd> 聞き取り 開始／停止<br>
-        <kbd>O</kbd> 投影ウィンドウを開く<br>
-        <kbd>H</kbd> 画像を固定（自動で切り替えない）<br>
-        <kbd>N</kbd> 人物名の候補を並べる ON／OFF<br>
-        <kbd>W</kbd> 単語リストの自動検索 ON／OFF<br>
-        <kbd>1</kbd>〜<kbd>9</kbd> 履歴の言葉（候補も）を表示<br>
-        <kbd>/</kbd> 手入力で検索<br>
-        <kbd>F</kbd> この操作画面を全画面<br>
-        <kbd>+</kbd> <kbd>−</kbd> 字幕の文字を大きく／小さく<br>
-        <kbd>C</kbd> 字幕を消す<br>
-        <kbd>K</kbd> 会話モード（簡易版） ON／OFF<br>
-        投影ウィンドウ側：クリックか <kbd>F</kbd> で全画面
-      </div>
+      <button class="small" id="save" data-i18n="save"></button>
+      <div class="keys" style="margin-top:14px" data-i18n="keys"></div>
     </div>
   </div>
 </details>
 
+<script src="i18n.js?v=1"></script>
 <script src="lib/kuromoji.js"></script>
 <script>
 // ---------- 設定 ----------
 const DEFAULTS = {
-  words: [
-    "# ここに検索したい言葉を1行に1つ書きます（# で始まる行はメモ）",
-    "ひまわり",
-    "富士山",
-    "モナリザ|モナ・リザ = モナ・リザ 絵画",
-  ].join("\n"),
+  words: null,        // 単語リスト（はじめは言語ごとの例。i18n.js の SAMPLE_WORDS）
   subScale: 1,       // 字幕の文字の大きさ（1 = ふつう）
   aiMode: true,      // 会話モード（簡易版）。ブラウザ版でははじめからオン
   aiLevel: "wide",   // 会話モードで拾う言葉の多さ（wide：ひろげる / normal：ふつう / few：少なめ）
@@ -256,6 +232,8 @@ const DEFAULTS = {
   cooldown: 40,      // 同じ言葉を出し直さない秒数（思いがけない写真がまた出てもいいので短め）
   autoNames: true,
   autoWords: true,
+  // 言語（聞き取る言葉・画面の文字・Wikipedia）。はじめはブラウザの言語に合わせる
+  lang: Object.keys(LANGS).find((l) => (navigator.language || "").toLowerCase().startsWith(l)) || "ja",
 };
 const STORE = "koe-kensaku-web-settings";
 let settings = { ...DEFAULTS };
@@ -265,6 +243,10 @@ if (!settings.v3) { if (settings.cooldown === 120 || settings.cooldown === 30) s
 // 「ひろげる」ができる前の「ふつう」のままなら、ひろげるにする（1回だけ）
 if (!settings.v4) { if (settings.aiLevel === "normal") settings.aiLevel = "wide"; settings.v4 = true; try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
 function saveSettings() { try { localStorage.setItem(STORE, JSON.stringify(settings)); } catch (e) {} }
+if (!LANGS[settings.lang]) settings.lang = "ja";
+if (settings.words == null) settings.words = SAMPLE_WORDS[settings.lang];
+const T = (key, vars) => tr(settings.lang, key, vars);
+const isJa = () => settings.lang === "ja";
 
 const $ = (id) => document.getElementById(id);
 const statusEl = $("status");
@@ -309,7 +291,27 @@ function buildLists() {
 }
 
 // 文から単語リストの言葉と人物名を探す
+// 日本語以外：英語・イタリア語は単語の切れ目で、中国語・韓国語は文字の並びで探す
+const isLatin = () => settings.lang === "en" || settings.lang === "it";
+function wordRe(w) {
+  return new RegExp(`(?<![\\p{L}\\p{N}])${w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?![\\p{L}\\p{N}])`, "iu");
+}
+function analyzeOther(text) {
+  const hits = [];
+  if (!settings.autoWords) return hits;
+  const low = text.normalize("NFKC").toLowerCase();
+  for (const e of entries) {
+    const found = e.names.find((n) => {
+      const w = n.normalize("NFKC").toLowerCase().trim();
+      return w && (isLatin() ? wordRe(w).test(low) : norm(low).includes(norm(w)));
+    });
+    if (found) hits.push({ query: e.query, label: e.label, photos: e.photos, url: e.url, kind: e.url ? "site" : e.photos ? "photo" : "word", trig: norm(found), trigRead: "" });
+  }
+  return hits;
+}
+
 function analyze(text, { withNames }) {
+  if (!isJa()) return analyzeOther(text);
   const hits = [];   // { query, label, kind, surface }
   const tokens = tokenizer ? tokenizer.tokenize(text) : [];
   const surfNorm = norm(text);
@@ -418,7 +420,14 @@ function listReadings() {
 // 名前や職業のあとに付く字。文の切れ目しだいで辞書が「いえ」などと読むので決めておく
 const SUFFIX_READINGS = { "家": "か", "者": "しゃ", "士": "し", "性": "せい", "的": "てき", "化": "か", "師": "し" };
 
+// 日本語以外は、ルビなしで言葉ごとに区切る（字幕の行の折り返しに使う）
+function plainTokens(text) {
+  if (!("Segmenter" in Intl)) return text.split(/(\s+)/).filter(Boolean).map((w) => [w, ""]);
+  return [...new Intl.Segmenter(settings.lang, { granularity: "word" }).segment(text)].map((g) => [g.segment, ""]);
+}
+
 function rubyTokens(text) {
+  if (!isJa()) return plainTokens(text);
   if (!tokenizer) return [[text, ""]];
   // 文全体を一度に区切る（途中で切ると読みが変わることがある）
   let pos = 0;
@@ -457,7 +466,7 @@ function rubyTokens(text) {
 }
 
 function sendSubtitle(type, text) { webChannel.postMessage({ type, tokens: rubyTokens(text) }); }
-function sendSubStyle() { webChannel.postMessage({ type: "style", scale: settings.subScale, pos: settings.subPos }); }
+function sendSubStyle() { webChannel.postMessage({ type: "style", scale: settings.subScale, pos: settings.subPos, lang: settings.lang }); }
 function clearSubtitle() { webChannel.postMessage({ type: "clear" }); }
 webChannel.onmessage = (e) => { if (e.data?.type === "hello") sendSubStyle(); };
 
@@ -483,7 +492,7 @@ function logPayload() {
   const s = logSession;
   // ファイル名は始めた日時（秒まで。同じ分に何回始めても別のファイルになる）
   const name = `${ymd(s.start)}_${pad2(s.start.getHours())}-${pad2(s.start.getMinutes())}-${pad2(s.start.getSeconds())}`;
-  const head = `こえ検索 文字起こし記録\n日付：${ymd(s.start)}\n時間：${hm(s.start)} 〜 ${s.end ? hm(s.end) : "（記録中）"}\n\n`;
+  const head = `${T("logTitle")}\n${T("logDate")}: ${ymd(s.start)}\n${T("logTime")}: ${hm(s.start)} – ${s.end ? hm(s.end) : T("logRecording")}\n\n`;
   return { name, text: head + s.lines.join("\n") + "\n" };
 }
 // ブラウザ版は、止めたときにテキストファイルとしてダウンロードする。
@@ -508,7 +517,7 @@ function logStop() {
   logBackup();
   const p = logPayload();
   downloadText(p.name, p.text);
-  setTimeout(() => status(`文字起こしを保存しました（ダウンロード）：${p.name}.txt`, { ms: 10000 }), 50);
+  setTimeout(() => status(T("logSaved", { n: p.name }), { ms: 10000 }), 50);
 }
 setInterval(() => { if (logSession && !logSession.end && logSession.dirty) logBackup(); }, 30 * 1000);
 window.addEventListener("pagehide", () => { if (logSession && !logSession.end) { logSession.end = new Date(); logBackup(); } });
@@ -534,8 +543,73 @@ const WIDE_SKIP = new Set(("日本 今日 明日 昨日 本日 自分 皆さん 
 const COMMON_VERBS = new Set("する ある いる なる 言う 思う 行く 来る くる できる 見る 聞く 分かる わかる 使う 持つ やる 出る 入る 考える 知る 頂く いただく 下さる くださる 書く 作れる 見える 聞こえる 始める 終わる 続ける おる いう".split(" "));
 const COMMON_ADJS = new Set("ない いい よい 良い 多い 少ない すごい 凄い 大きい 小さい 早い 遅い 近い 遠い 新しい 古い 高い 低い 長い 短い 難しい 易しい".split(" "));
 
+// ---------- 会話モード（日本語以外） ----------
+// 辞書がないので、言葉の区切り（Intl.Segmenter）と、ありふれた言葉の一覧で拾う
+const STOP = {
+  en: new Set(("the a an and or but if then so of to in on at by for with from as is are was were be been being am do does did done have has had " +
+    "i you he she it we they me him her us them my your his its our their this that these those there here what which who whom whose when where why how " +
+    "not no yes very really just also only even still about into over under again more most some any all each every other such own same than too " +
+    "can could will would shall should may might must let get got go goes going went come came make made say said see saw know knew think thought want like " +
+    "well okay ok oh um uh yeah right now today tomorrow yesterday thing things something anything nothing everything someone people time times way day " +
+    "kind lot little bit maybe because actually please thank thanks hello hi sorry word words number first second next last one two three four five six seven eight nine ten " +
+    "i'm it's that's don't can't let's you're we're they're there's what's").split(" ")),
+  it: new Set(("il lo la i gli le un uno una un' e ed o ma se poi quindi di a da in con su per tra fra come è e' sono era erano essere stato stata ho hai ha abbiamo avete hanno " +
+    "io tu lui lei noi voi loro mi ti si ci vi me te li ne mio mia tuo tua suo sua nostro vostro questo questa questi queste quello quella quelli quelle " +
+    "che chi cosa cose quando dove perché perche non no sì si molto poco più piu meno anche solo ancora già gia sempre mai tutto tutti tutta tutte altro altra ogni qualche " +
+    "fare fatto faccio fa dire detto dico vedere visto andare vado va venire viene volere voglio potere posso dovere devo bene male allora ecco oggi domani ieri adesso ora " +
+    "parola parole numero primo secondo prossimo ultimo uno due tre quattro cinque sei sette otto nove dieci del della dello dei delle degli al alla allo ai alle agli " +
+    "dal dalla dai dalle nel nella nei nelle sul sulla sui sulle c'è c'e l' dell' all' nell' grazie ciao scusa okay ok").split(" ")),
+  zh: new Set(("我 你 他 她 它 我们 你们 他们 她们 这 那 这个 那个 这些 那些 什么 怎么 怎么样 为什么 哪里 哪儿 谁 的 了 是 在 有 和 与 也 都 就 还 又 很 非常 真的 " +
+    "一个 一下 一些 没有 不是 可以 可能 应该 因为 所以 但是 如果 然后 现在 今天 明天 昨天 时候 东西 事情 问题 大家 自己 这样 那样 好的 嗯 啊 吧 呢 吗 哦 对 " +
+    "一起 已经 正在 比较 特别 其实 而且 或者 好像 这里 那里 好 说 看 想 做 去 来 知道 觉得 需要 第一 第二 下一个 最后 词 词语 一 二 三 四 五 六 七 八 九 十 个 些 上 下 里 中 大 小 多 少 不 没 要 会 能 着 过 把 被 给 让").split(" ")),
+  ko: new Set(("저 나 너 우리 저희 그 이 저것 그것 이것 여기 거기 저기 뭐 무엇 왜 어디 누구 언제 어떻게 그리고 그래서 그런데 하지만 그러면 또 또한 정말 진짜 아주 너무 " +
+    "좀 조금 많이 다 모두 그냥 지금 오늘 내일 어제 것 거 수 때 등 네 예 아니 아니요 응 음 어 아 그래 좋아요 있다 없다 하다 되다 이다 있어요 없어요 해요 했어요 " +
+    "합니다 입니다 같아요 생각 사람 말 단어 번 첫째 둘째 다음 마지막 하나 둘 셋 넷 다섯 여섯 일곱 여덟 아홉 열 일 삼 사 오 육 칠 팔 구 십").split(" ")),
+};
+// 韓国語は言葉のうしろに付く「は・を・に」などを外してから見る（학교에서 → 학교）
+const KO_PARTICLES = ["에서는", "에게서", "으로는", "에서", "에게", "까지", "부터", "처럼", "보다", "하고", "이랑", "으로", "은", "는", "이", "가", "을", "를", "에", "의", "도", "로", "와", "과", "만", "랑"];
+function stripKo(w) {
+  for (const p of KO_PARTICLES) if (w.length > p.length && w.endsWith(p)) return w.slice(0, -p.length);
+  return w;
+}
+function ngOther(w) {
+  const lw = w.toLowerCase();
+  return (NG_LANG[settings.lang] || []).some((x) => isLatin() ? lw.startsWith(x) && (x.length >= 5 || lw.length <= x.length + 1) : lw.includes(x));
+}
+function aiHearOther(text) {
+  const lang = settings.lang, level = settings.aiLevel;
+  const stop = STOP[lang] || new Set();
+  const found = [];
+  const segs = "Segmenter" in Intl ? [...new Intl.Segmenter(lang, { granularity: "word" }).segment(text)].filter((g) => g.isWordLike)
+    : text.split(/\s+/).map((w) => ({ segment: w, index: 0 }));
+  segs.forEach((g, i) => {
+    let w = g.segment.replace(/^[\p{P}]+|[\p{P}]+$/gu, "");
+    if (lang === "ko") w = stripKo(w);
+    if (!w || /^\d+$/.test(w)) return;
+    const lw = w.toLowerCase();
+    if (stop.has(lw) || excludeSet.has(norm(w)) || ngOther(w)) return;
+    const len = [...w].length;
+    if (isLatin()) {
+      // 少なめ：文の頭でない大文字の言葉（地名・作品名）か、長い言葉だけ
+      const proper = i > 0 && /^\p{Lu}/u.test(w);
+      if (level === "few" ? !(proper || len >= 9) : len < (level === "wide" ? 3 : 4)) return;
+    } else {
+      // 中国語・韓国語：少なめは3字以上、ふつうは2字以上、ひろげるは1字でもよい（光、影、松）
+      if (len < (level === "few" ? 3 : level === "wide" ? 1 : 2)) return;
+      // 韓国語の、ていねいな言い終わり（～요・～니다）は、ひろげるのときだけ
+      if (lang === "ko" && level !== "wide" && /(요|니다|다)$/.test(w)) return;
+    }
+    if (!found.some((f) => norm(f.w) === norm(w))) found.push({ w, proper: isLatin() && i > 0 && /^\p{Lu}/u.test(w), len });
+  });
+  // ひろげる：1つの発言につき1つ。地名・作品名などの大文字の言葉を先に、なければいちばん長い言葉
+  const pick = level === "wide" ? found.slice().sort((a, b) => (b.proper - a.proper) || (b.len - a.len)).slice(0, 1) : found;
+  for (const { w } of pick) request({ query: w, label: w, kind: "ai" });
+}
+
 function aiHear(text) {
-  if (!settings.aiMode || !tokenizer) return;
+  if (!settings.aiMode) return;
+  if (!isJa()) return aiHearOther(text);
+  if (!tokenizer) return;
   const wide = settings.aiLevel === "wide";
   const toks = tokenizer.tokenize(text);
   const found = [];
@@ -581,7 +655,7 @@ function aiHear(text) {
 function toggleAI() {
   settings.aiMode = !settings.aiMode;
   saveSettings(); updatePills();
-  status(settings.aiMode ? "会話モード（簡易版）を始めました" : "会話モードを止めました");
+  status(T(settings.aiMode ? "aiStarted" : "aiStopped"));
 }
 
 // ---------- 投影ウィンドウ ----------
@@ -609,18 +683,17 @@ if (isPhone) {
 function displayOpen() { return isPhone || (!!disp && !disp.closed); }
 
 async function onOpenDisplay() {
-  if (displayOpen()) { disp.focus(); return status("投影ウィンドウはもう開いています（このまま使えます）。"); }
+  if (displayOpen()) { disp.focus(); return status(T("dispAlready")); }
   // 先に開く（キーを押した直後でないと、ポップアップとして止められるため）
   disp = window.open("projection.html", "koe-web-projection", "popup,width=1280,height=800");
-  if (!disp) return status("投影ウィンドウを開けませんでした。アドレスバー右のアイコンから「ポップアップを許可」してください。", { error: true, ms: 0 });
+  if (!disp) return status(T("popupBlocked"), { error: true, ms: 0 });
   if (!screenInfo) screenInfo = await findSecondScreen();   // 初回だけ「ウィンドウ管理」の許可を聞かれます
   if (screenInfo) {
     try { disp.moveTo(screenInfo.availLeft, screenInfo.availTop); disp.resizeTo(screenInfo.availWidth, screenInfo.availHeight); } catch (e) {}
   }
   updatePills();
   setTimeout(sendSubStyle, 800);
-  status(screenInfo ? "投影ウィンドウを2画面目に開きました。投影ウィンドウの中をクリックすると全画面になります。"
-    : "投影ウィンドウを開きました。プロジェクターの画面へ移して、中をクリックすると全画面になります。", { ms: 15000 });
+  status(T(screenInfo ? "dispOpened2" : "dispOpened"), { ms: 15000 });
 }
 
 // ブラウザ版では写真フォルダは使えない（「=」の後ろが写真の場所なら、言葉そのものを検索する）
@@ -628,7 +701,7 @@ function isPhotoTarget(t) { return /\.(jpe?g|png|gif|webp|heic|heif)$/i.test(t) 
 
 async function navigateDisplay(hit) {
   if (!displayOpen()) {
-    status("投影ウィンドウが開いていません。O キーで開いてください。", { error: true, ms: 0 });
+    status(T("dispNotOpen"), { error: true, ms: 0 });
     updatePills();
     return false;
   }
@@ -664,12 +737,12 @@ function request(hit, { force = false } = {}) {
   // 自動で見つけた人物名は投影せず、履歴に候補として並べるだけ
   if (hit.candidate && !force) {
     addHistory({ ...hit, at: now, shown: false });
-    status(`${hit.kind === "ai" ? "AIの候補" : "人物名の候補"}「${hit.query}」── 出すときは履歴をクリック（または数字キー）`);
+    status(T(hit.kind === "ai" ? "candAI" : "candName", { q: hit.query }));
     return;
   }
   if (hold && !force) {
     addHistory({ ...hit, at: now, shown: false });
-    status(`「${hit.query}」を見つけました（画像を固定中なので、履歴に入れました）`);
+    status(T("holdMsg", { q: hit.query }));
     return;
   }
   if (force) { queue = []; showNow(hit); return; }
@@ -695,8 +768,9 @@ function showNow(hit) {
   lastShownAt = Date.now();
   const item = { ...hit, at: lastShownAt, shown: true };
   item.candidate = false;
-  $("nowWord").textContent = hit.url ? `${hit.label}（サイト）` : hit.photos ? `${hit.label}（写真）` : hit.query;
-  logAdd(`→ 投影：${hit.url ? hit.label + "（サイト）" : hit.photos ? hit.label + "（写真）" : hit.query}（${KIND[hit.kind] || ""}）`, true);
+  const shownAs = hit.url ? T("nowSite", { w: hit.label }) : hit.photos ? T("nowPhoto", { w: hit.label }) : hit.query;
+  $("nowWord").textContent = shownAs;
+  logAdd(T("logShown", { x: shownAs, k: kindLabel(hit.kind) }), true);
   addHistory(item);
   renderQueue();
   navigateDisplay(hit).then((ok) => {
@@ -715,17 +789,18 @@ function renderQueue() {
   bar.style.width = holdMs && lastShownAt ? `${(left / holdMs) * 100}%` : "0%";
   bar.classList.toggle("held", hold);
   let html = "";
-  if (hold) html = "<b>固定中</b>：話が進んでも切り替えません（H キーで解除）";
+  if (hold) html = T("holdOn");
   else if (queue.length) {
-    html = `<b>あと ${Math.ceil(left / 1000)} 秒</b>で次へ → ` +
+    html = T("nextIn", { s: Math.ceil(left / 1000) }) + " " +
       queue.map((h, i) => `<span class="q">${i + 1}. ${escapeHtml(h.query)}</span>`).join(" ");
-  } else if (left > 0) html = `あと ${Math.ceil(left / 1000)} 秒はこの画像のまま（次の言葉が来たら順番待ち）`;
-  else if (lastShownAt) html = "次の言葉が来たら、すぐに切り替わります";
+  } else if (left > 0) html = T("stayFor", { s: Math.ceil(left / 1000) });
+  else if (lastShownAt) html = T("nextReady");
   $("queueInfo").innerHTML = html;
 }
 setInterval(renderQueue, 250);
 
-const KIND = { name: "人物名", word: "単語", photo: "写真", site: "サイト", manual: "手入力", ai: "AI" };
+const KIND_KEY = { name: "kName", word: "kWord", photo: "kPhoto", site: "kSite", manual: "kManual", ai: "kAI" };
+const kindLabel = (k) => (KIND_KEY[k] ? T(KIND_KEY[k]) : "");
 function renderHistory() {
   const ul = $("history");
   ul.innerHTML = "";
@@ -735,18 +810,18 @@ function renderHistory() {
     if (h.candidate) li.classList.add("candidate");
     if (h.candidate && h.kind === "ai") li.classList.add("ai-cand");
     const t = new Date(h.at);
-    li.innerHTML = `<span class="num">${i < 9 ? i + 1 : ""}</span><span class="w"></span><span class="tag ${h.kind}">${h.candidate ? (h.kind === "ai" ? "AIの候補" : "人物名の候補") : KIND[h.kind]}</span><span class="t">${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}</span>`;
+    li.innerHTML = `<span class="num">${i < 9 ? i + 1 : ""}</span><span class="w"></span><span class="tag ${h.kind}">${h.candidate ? T(h.kind === "ai" ? "candAITag" : "candNameTag") : kindLabel(h.kind)}</span><span class="t">${String(t.getHours()).padStart(2, "0")}:${String(t.getMinutes()).padStart(2, "0")}</span>`;
     li.querySelector(".w").textContent = h.query;
-    li.title = h.candidate ? "クリックで投影／右クリックで今後は候補に出さない" : "クリックでもう一度表示";
+    li.title = T(h.candidate ? "histClickCand" : "histClick");
     li.addEventListener("click", () => request({ ...h }, { force: true }));
     li.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       if (h.kind !== "name") return;
-      if (!confirm(`「${h.query}」を今後は人物名の候補に出さないようにしますか？`)) return;
+      if (!confirm(T("confirmExclude", { q: h.query }))) return;
       settings.exclude = (settings.exclude.trim() + "\n" + h.query).trim();
       $("exclude").value = settings.exclude;
       saveSettings(); buildLists();
-      status(`「${h.query}」を除外リストに入れました`);
+      status(T("excluded", { q: h.query }));
     });
     ul.appendChild(li);
   });
@@ -818,7 +893,7 @@ let wakeLock = null;
 function makeRec() {
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   const r = new SR();
-  r.lang = "ja-JP";
+  r.lang = LANGS[settings.lang].speech;
   r.continuous = true;
   r.interimResults = true;
   r.onstart = () => { running = true; lastAlive = Date.now(); updatePills(); };
@@ -838,15 +913,15 @@ function makeRec() {
     if (e.error === "no-speech" || e.error === "aborted") return;
     if (e.error === "not-allowed" || e.error === "service-not-allowed") {
       needsPermission = true;
-      status("マイクが許可されていません。アドレスバー左のアイコンからマイクを「許可」して、スペースキーを押してください。", { error: true, ms: 0 });
+      status(T("micDenied"), { error: true, ms: 0 });
     } else if (e.error === "network") {
       restartDelay = Math.min(restartDelay * 2, 10000);
-      status("インターネットが不安定です。つながりしだい自動で聞き取りを再開します。", { error: true, ms: 10000 });
+      status(T("netUnstable"), { error: true, ms: 10000 });
     } else if (e.error === "audio-capture") {
       restartDelay = 3000;
-      status("マイクが見つかりません。マイクをつなぎ直してください（自動でやり直します）。", { error: true, ms: 10000 });
+      status(T("noMic"), { error: true, ms: 10000 });
     } else {
-      status("音声認識のエラー: " + e.error + "（自動でやり直します）", { error: true });
+      status(T("srError", { e: e.error }), { error: true });
     }
   };
   r.onend = () => {
@@ -889,7 +964,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 
 function startListening() {
   if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) {
-    status("このブラウザは音声認識に対応していません。Google Chrome で開いてください。", { error: true, ms: 0 });
+    status(T("noSR"), { error: true, ms: 0 });
     return;
   }
   listening = true;
@@ -904,7 +979,7 @@ function startListening() {
   keepAwake();
   updatePills();
   renderListenBanner();
-  status("聞き取りを始めました。このままつけっぱなしで大丈夫です。");
+  status(T("listenStarted"));
 }
 
 function stopListening() {
@@ -914,7 +989,7 @@ function stopListening() {
   if (interimEl) { interimEl.remove(); interimEl = null; }
   updatePills();
   renderListenBanner();
-  status("聞き取りを止めました（スペースキーで再開）");
+  status(T("listenStopped"));
 }
 
 // こえ検索のタブが2つあると、マイクを取り合って聞き取りがついたり消えたりする。
@@ -933,10 +1008,10 @@ if (tabChannel) tabChannel.onmessage = (e) => {
 function renderListenBanner() {
   const el = $("listenBanner");
   let msg = "";
-  if (!listening && stoppedByOtherTab) msg = "別のタブでこえ検索が動いているので、このタブは止めました。このタブは閉じてください";
-  else if (!listening) msg = everListened ? `聞き取りは止まっています ── 「聞き取り」ボタン${isPhone ? "" : "かスペースキー"}で再開` : `「聞き取り」ボタン${isPhone ? "" : "（またはスペースキー）"}を押すと、聞き取りを始めます`;
-  else if (needsPermission) msg = "マイクの許可が必要です ── 許可してからスペースキー";
-  else if (!running && Date.now() - lastKick > 4000) msg = "聞き取りをやり直しています…";
+  if (!listening && stoppedByOtherTab) msg = T("otherTab");
+  else if (!listening) msg = T((everListened ? "stoppedResume" : "startPrompt") + (isPhone ? "Phone" : ""));
+  else if (needsPermission) msg = T("needPerm");
+  else if (!running && Date.now() - lastKick > 4000) msg = T("restarting");
   el.textContent = msg;
   el.hidden = !msg;
   el.classList.toggle("idle", !listening && !everListened);   // 始める前は赤ではなく緑の案内
@@ -945,14 +1020,14 @@ function renderListenBanner() {
 // ---------- 操作 ----------
 function updatePills() {
   $("pListen").classList.toggle("on", listening && running);
-  $("pListen").firstChild.textContent = listening ? "聞き取り中" : "聞き取り";
+  $("pListen").querySelector(".pl").textContent = T(listening ? "pListenOn" : "pListen");
   $("pNames").classList.toggle("on", settings.autoNames);
   $("pWords").classList.toggle("on", settings.autoWords);
   $("pHold").classList.toggle("on", hold);
   $("pAI").classList.toggle("on", settings.aiMode);
   const open = displayOpen();
   $("pDisplay").classList.toggle("on", open);
-  $("pDisplay").firstChild.textContent = open ? "投影ウィンドウ" : "投影ウィンドウを開く";
+  $("pDisplay").querySelector(".pl").textContent = T(open ? "pDisplayOn" : "pDisplay");
 }
 setInterval(updatePills, 1500);
 
@@ -986,9 +1061,9 @@ document.addEventListener("keydown", (e) => {
   else if (k === "w") actions.words();
   else if (k === "h") actions.hold();
   else if (k === "f") actions.fullscreen();
-  else if (k === "+" || k === "=" || k === ";") { settings.subScale = Math.min(2, +(settings.subScale + 0.1).toFixed(2)); saveSettings(); sendSubStyle(); status(`字幕の大きさ：${Math.round(settings.subScale * 100)}%`); }
-  else if (k === "-") { settings.subScale = Math.max(0.5, +(settings.subScale - 0.1).toFixed(2)); saveSettings(); sendSubStyle(); status(`字幕の大きさ：${Math.round(settings.subScale * 100)}%`); }
-  else if (k === "c") { clearSubtitle(); status("字幕を消しました"); }
+  else if (k === "+" || k === "=" || k === ";") { settings.subScale = Math.min(2, +(settings.subScale + 0.1).toFixed(2)); saveSettings(); sendSubStyle(); status(T("subSize", { p: Math.round(settings.subScale * 100) })); }
+  else if (k === "-") { settings.subScale = Math.max(0.5, +(settings.subScale - 0.1).toFixed(2)); saveSettings(); sendSubStyle(); status(T("subSize", { p: Math.round(settings.subScale * 100) })); }
+  else if (k === "c") { clearSubtitle(); status(T("subCleared")); }
   else if (k === "/") { e.preventDefault(); $("manual").focus(); }
   else if (/^[1-9]$/.test(k)) {
     const h = history[Number(k) - 1];
@@ -1014,7 +1089,7 @@ $("cooldown").value = settings.cooldown;
 $("logDownload").onclick = () => {
   let p = null;
   try { p = JSON.parse(localStorage.getItem(LOG_BACKUP) || "null"); } catch (e) {}
-  if (p) downloadText(p.name, p.text); else status("まだ記録がありません");
+  if (p) downloadText(p.name, p.text); else status(T("noLog"));
 };
 $("subPos").value = settings.subPos;
 $("aiLevel").value = settings.aiLevel;
@@ -1026,18 +1101,42 @@ $("save").onclick = () => {
   settings.minHold = Math.max(0, Number($("minHold").value) || 0);
   settings.cooldown = Math.max(0, Number($("cooldown").value) || 0);
   saveSettings(); buildLists();
-  status(`保存しました（単語リスト ${entries.length} 語）`);
+  status(T("saved", { n: entries.length }));
+};
+
+// ---------- 言語 ----------
+// 言語を変えると、画面の文字・聞き取る言葉・投影ウィンドウ（Wikipedia の言語）を切り替える
+function applyLang() {
+  applyI18n(settings.lang);
+  document.title = T("pageTitle");
+  document.body.classList.toggle("lang-ja", isJa());
+  updatePills(); renderQueue(); renderHistory(); renderListenBanner();
+}
+for (const [code, l] of Object.entries(LANGS)) $("lang").add(new Option(l.name, code));
+$("lang").value = settings.lang;
+$("lang").onchange = () => {
+  // 単語リストが、まだはじめの例のままなら、新しい言語の例にする
+  if (Object.values(SAMPLE_WORDS).includes(settings.words.trim())) { settings.words = SAMPLE_WORDS[$("lang").value]; $("words").value = settings.words; }
+  settings.lang = $("lang").value;
+  saveSettings(); buildLists(); applyLang(); sendSubStyle(); clearSubtitle();
+  // 聞き取り中なら、新しい言語で聞き取り直す
+  if (rec) { try { rec.abort(); } catch (e) {} rec = null; }
+  if (listening) { rec = makeRec(); setTimeout(kick, 300); }
+  status(T("langChanged", { l: LANGS[settings.lang].name }));
+  $("lang").blur();
 };
 
 // ---------- 起動 ----------
-updatePills();
-status("辞書を読み込み中…", { ms: 0 });
+applyLang();
+const readyMsg = () => status(T(isPhone ? "readyPhone" : "ready", { n: entries.length }), { ms: 0 });
+// 日本語の辞書（kuromoji）は、日本語のルビ・人物名・会話モードに使う。ほかの言語では待たずに始められる
+buildLists();
+if (isJa()) status(T("loadingDict"), { ms: 0 }); else readyMsg();
 kuromoji.builder({ dicPath: "lib/dict/" }).build((err, t) => {
-  if (err) return status("辞書の読み込みに失敗しました: " + err, { error: true, ms: 0 });
+  if (err) { if (isJa()) status(T("dictFail", { e: err }), { error: true, ms: 0 }); return; }
   tokenizer = t;
   buildLists();
-  status(isPhone ? `準備ができました（単語リスト ${entries.length} 語）。「聞き取り」ボタンで始めてください。`
-    : `準備ができました（単語リスト ${entries.length} 語）。O キーで投影ウィンドウを開き、「聞き取り」ボタン（またはスペースキー）で聞き取りを始めてください。`, { ms: 0 });
+  if (isJa()) readyMsg();
   // ブラウザ版は、開いたときは聞き取りオフ。「聞き取り」ボタンかスペースキーで始める
   renderListenBanner();
 });
