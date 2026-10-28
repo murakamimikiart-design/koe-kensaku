@@ -574,7 +574,8 @@ function aiHear(text) {
         ((t.pos === "動詞" && !COMMON_VERBS.has(base)) || (t.pos === "形容詞" && !COMMON_ADJS.has(base)))) add(base);
   }
   flush();
-  for (const w of found) request({ query: w, label: w, kind: "ai" });
+  // ひろげる：拾う言葉が多いので、1つの発言につき最初の1つだけ出す（「鍵を開ける」→「鍵」）
+  for (const w of wide ? found.slice(0, 1) : found) request({ query: w, label: w, kind: "ai" });
 }
 
 function toggleAI() {
